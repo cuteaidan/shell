@@ -1,11 +1,11 @@
 #!/bin/bash
 # 一个整合脚本管理器，可以从远程加载并运行子脚本
 # 用法：
-#   bash <(curl -Ls https://raw.githubusercontent.com/eaidan/lib/refs/heads/main/main.sh)
+#   bash <(curl -Ls https://raw.githubusercontent.com/cuteaidan/lib/refs/heads/main/main.sh)
 
 # ================== 配置 ==================
 # 远程配置文件 URL
-CONFIG_URL="https://raw.githubusercontent.com/dcj1104/lib/refs/heads/main/scripts.conf"
+CONFIG_URL="https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/scripts.conf"
 # ================== 配置结束 ==============
 
 # 下载配置文件
