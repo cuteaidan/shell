@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 深红色美化版菜单：修复标题行边框颜色 + 左侧缩进 + 全角符号支持
+# 最终稳定版菜单：深红边框 + 左缩进美化 + 全角字符支持 + 修复标题行和输入提示颜色
 
 set -o errexit
 set -o pipefail
@@ -32,61 +32,46 @@ C_DIV=$'\033[38;5;240m'
 C_HINT=$'\033[0;37m'
 # =====================
 
-# 绘制框架
 draw_line() { printf "%b╔%s╗%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_mid()  { printf "%b╠%s╣%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 
-# 绘制文本行，支持全角字符和ANSI颜色
-draw_text() {
-  local text="$1"
-  local clean_text len=0 i char code
-
+# 计算字符串宽度（支持全角和ANSI颜色码）
+str_width() {
+  local text="$1" clean_text len=0 i char code
   clean_text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
-
   len=0
-  for ((i=0; i<${#clean_text}; i++)); do
+  for ((i=0;i<${#clean_text};i++)); do
     char="${clean_text:i:1}"
     code=$(printf '%d' "'$char")
     if (( code >= 19968 && code <= 40959 )) || \
        (( code >= 65281 && code <= 65519 )) || \
        (( code >= 12288 && code <= 12351 )) || \
        (( code >= 12352 && code <= 12543 )); then
-      len=$((len + 2))
+      len=$((len+2))
     else
-      len=$((len + 1))
+      len=$((len+1))
     fi
   done
+  echo "$len"
+}
 
+# 绘制文本行（左缩进）
+draw_text() {
+  local text="$1"
+  local width=$(str_width "$text")
   local indent_len=${#LEFT_INDENT}
-  local padding=$((BOX_WIDTH - len - indent_len - 2))
+  local padding=$((BOX_WIDTH - width - indent_len - 2))
   ((padding < 0)) && padding=0
-
   printf "%b║%s%s%*s%b║%b\n" "$C_BOX" "$LEFT_INDENT" "$text" "$padding" "" "$C_BOX" "$C_RESET"
 }
 
-# 绘制标题居中
+# 绘制标题居中（边框颜色统一）
 draw_title() {
   local title="$1"
-  local clean_text len=0 i char code
-
-  clean_text=$(echo -ne "$title" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
-  len=0
-  for ((i=0; i<${#clean_text}; i++)); do
-    char="${clean_text:i:1}"
-    code=$(printf '%d' "'$char")
-    if (( code >= 19968 && code <= 40959 )) || \
-       (( code >= 65281 && code <= 65519 )) || \
-       (( code >= 12288 && code <= 12351 )) || \
-       (( code >= 12352 && code <= 12543 )); then
-      len=$((len + 2))
-    else
-      len=$((len + 1))
-    fi
-  done
-
-  local left_pad=$(( (BOX_WIDTH - len - 2)/2 ))
-  local right_pad=$((BOX_WIDTH - len - left_pad - 2))
+  local width=$(str_width "$title")
+  local left_pad=$(( (BOX_WIDTH - width - 2)/2 ))
+  local right_pad=$((BOX_WIDTH - width - left_pad -2))
   printf "%b║%*s%s%*s║%b\n" "$C_BOX" "$left_pad" "" "$title" "$right_pad" "" "$C_BOX" "$C_RESET"
 }
 
@@ -151,7 +136,7 @@ run_slot() {
 page=1
 while true; do
   print_page "$page"
-  read -rp "请输入选项 (0-9 / n / b / q): " key || true
+  read -rp $'\033[1;38;5;82m请输入选项 (0-9 / n / b / q): \033[0m' key || true
   case "$key" in
     [0-9]) run_slot "$page" "$key" ;;
     n|N) ((page < PAGES)) && ((page++)) || { echo "已是最后一页"; read -rp "按回车返回..." _; } ;;
