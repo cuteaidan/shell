@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 完整稳定美化版菜单（修复全角字符判断语法问题）
+# 完整稳定美化版菜单（修复重复行和全角字符宽度问题）
 
 set -o errexit
 set -o pipefail
@@ -44,11 +44,8 @@ str_width() {
   for ((i=0;i<${#clean_text};i++)); do
     char="${clean_text:i:1}"
     code=$(printf '%d' "'$char")
-    # 中文常用字符、全角符号、中文标点、日文假名
-    if (( (code >= 19968 && code <= 40959) ||
-          (code >= 65281 && code <= 65519) ||
-          (code >= 12288 && code <= 12351) ||
-          (code >= 12352 && code <= 12543) )); then
+    if (( (code >= 19968 && code <= 40959) || (code >= 65281 && code <= 65519) ||
+          (code >= 12288 && code <= 12351) || (code >= 12352 && code <= 12543) )); then
       len=$((len+2))
     else
       len=$((len+1))
@@ -72,7 +69,7 @@ draw_title() {
   local title="$1"
   local width=$(str_width "$title")
   local left_pad=$(( (BOX_WIDTH - width - 2)/2 ))
-  local right_pad=$((BOX_WIDTH - width - left_pad -2))
+  local right_pad=$((BOX_WIDTH - width - left_pad - 2))
   printf "%b║%*s%s%*s║%b\n" "$C_BOX" "$left_pad" "" "$title" "$right_pad" "" "$C_BOX" "$C_RESET"
 }
 
