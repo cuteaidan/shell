@@ -25,14 +25,14 @@ mapfile -t ALL_LINES < <(grep -vE '^\s*#|^\s*$' "$TMP_CONF")
 TOTAL=${#ALL_LINES[@]}
 PAGES=$(( (TOTAL + PER_PAGE - 1) / PER_PAGE ))
 
-# ====== 色彩定义 ======
-C_RESET="\033[0m"
-C_BOX="\033[38;5;208m"   # 高饱和橙色
-C_TITLE="\033[1;38;5;202m"
-C_KEY="\033[1;32m"       # 亮绿色序号
-C_NAME="\033[1;38;5;39m" # 亮蓝色脚本名
-C_DIV="\033[38;5;240m"
-C_HINT="\033[0;37m"
+# ====== 色彩定义（用 $'...' 解析 ANSI 转义） ======
+C_RESET=$'\033[0m'
+C_BOX=$'\033[38;5;208m'
+C_TITLE=$'\033[1;38;5;202m'
+C_KEY=$'\033[1;32m'
+C_NAME=$'\033[1;38;5;39m'
+C_DIV=$'\033[38;5;240m'
+C_HINT=$'\033[0;37m'
 # =====================
 
 # 绘制框架
@@ -45,7 +45,7 @@ draw_text() {
   local text="$1"
   local clean_text len=0 i char code
 
-  # 去掉 ANSI 颜色码
+  # 去掉 ANSI 颜色码计算长度
   clean_text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
 
   len=0
@@ -60,7 +60,6 @@ draw_text() {
     fi
   done
 
-  # 右侧填充空格
   local padding=$((BOX_WIDTH - len - 2))  # 2 = 左右边框
   ((padding < 0)) && padding=0
 
@@ -78,7 +77,7 @@ print_page() {
   clear
   draw_line
   local title="脚本管理器 (by Moreanp)"
-  draw_text " $(printf '%*s%s%*s' $(((BOX_WIDTH - ${#title})/2)) '' "$C_TITLE$title$C_RESET" $(((BOX_WIDTH - ${#title})/2 - 2)) '')"
+  draw_text "$(printf '%*s%s%*s' $(((BOX_WIDTH - ${#title})/2)) '' "$C_TITLE$title$C_RESET" $(((BOX_WIDTH - ${#title})/2 - 2)) '')"
   draw_mid
 
   # 序号行
