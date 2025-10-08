@@ -51,8 +51,8 @@ draw_text() {
   len=0
   for ((i=0; i<${#clean_text}; i++)); do
     char="${clean_text:i:1}"
-    # 中文/全角判断：CJK 常用中文 19968-40959 (十进制)
     code=$(printf '%d' "'$char")
+    # 中文/全角判断：CJK 常用中文 19968-40959 (十进制)
     if (( code >= 19968 && code <= 40959 )); then
       len=$((len + 2))
     else
@@ -64,7 +64,7 @@ draw_text() {
   local padding=$((BOX_WIDTH - len - 2))  # 2 = 左右边框
   ((padding < 0)) && padding=0
 
-  # 打印行
+  # printf 输出 ANSI 颜色原样显示
   printf "%b║%s%*s║%b\n" "$C_BOX" "$text" "$padding" "" "$C_BOX"
 }
 
@@ -78,8 +78,7 @@ print_page() {
   clear
   draw_line
   local title="脚本管理器 (by Moreanp)"
-  local pad=$(( (BOX_WIDTH - ${#title} - 2) / 2 ))
-  draw_text "$(printf '%*s%s%*s' "$pad" '' "$title" "$((BOX_WIDTH - pad - ${#title} - 2))" '')"
+  draw_text " $(printf '%*s%s%*s' $(((BOX_WIDTH - ${#title})/2)) '' "$C_TITLE$title$C_RESET" $(((BOX_WIDTH - ${#title})/2 - 2)) '')"
   draw_mid
 
   # 序号行
@@ -87,9 +86,8 @@ print_page() {
     idx=$(( start + slot ))
     if (( idx <= end )); then
       name="${ALL_LINES[idx]%%|*}"
-      # 组合序号和脚本名带颜色
-      line="[$slot] $C_NAME$name$C_RESET"
-      draw_text " $C_KEY$line$C_RESET"
+      line="$C_KEY[$slot] $C_NAME$name$C_RESET"
+      draw_text " $line"
     else
       draw_text ""
     fi
