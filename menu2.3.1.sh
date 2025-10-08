@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 彩色带边框分页脚本管理器
+# 紧凑橘色UI版脚本管理器
 # 用法：bash <(curl -fsSL https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/menu.sh)
 
 set -o errexit
@@ -14,38 +14,36 @@ PER_PAGE=10
 TMP_CONF="$(mktemp -t menu_conf.XXXXXX)"
 trap 'rm -f "$TMP_CONF"' EXIT
 
-# 下载配置文件
 if ! curl -fsSL "$CONFIG_URL" -o "$TMP_CONF"; then
   echo "❌ 无法下载配置文件: $CONFIG_URL"
   exit 1
 fi
+
 mapfile -t ALL_LINES < <(grep -vE '^\s*#|^\s*$' "$TMP_CONF")
 TOTAL=${#ALL_LINES[@]}
 PAGES=$(( (TOTAL + PER_PAGE - 1) / PER_PAGE ))
 
-# ====== 色彩定义 ======
+# ====== 颜色主题 ======
 C_RESET="\033[0m"
-C_TITLE_BG="\033[48;5;17;1m"
-C_TITLE_FG="\033[1;37m"
-C_KEY="\033[1;32m"        # 明亮绿色
-C_NAME="\033[1;38;5;45m"  # 明亮蓝色（高对比）
-C_DIV="\033[38;5;241m"
-C_HINT="\033[0;37m"
-C_BOX="\033[38;5;240m"
+C_BOX="\033[38;5;214m"      # 饱和橙色
+C_TITLE="\033[1;38;5;214m"  # 橙色加粗
+C_KEY="\033[1;33m"          # 黄色序号
+C_NAME="\033[1;38;5;39m"    # 高亮蓝
+C_DIV="\033[38;5;214m"
 # =====================
 
-# 打印水平线（根据终端宽度自动）
-term_width=$(tput cols 2>/dev/null || echo 70)
-if (( term_width < 70 )); then term_width=70; fi
-line=$(printf '═%.0s' $(seq 1 $((term_width-2))))
+# 固定宽度（约半屏）
+term_width=45
+inner_width=$((term_width - 2))
+line=$(printf '═%.0s' $(seq 1 $inner_width))
 
 draw_top()  { printf "%b╔%s╗%b\n" "$C_BOX" "$line" "$C_RESET"; }
 draw_mid()  { printf "%b╠%s╣%b\n" "$C_BOX" "$line" "$C_RESET"; }
 draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$line" "$C_RESET"; }
-draw_blank(){ printf "%b║%-*s║%b\n" "$C_BOX" $((term_width-2)) " " "$C_RESET"; }
-draw_text() { local text="$1"; printf "%b║ %-*s║%b\n" "$C_BOX" $((term_width-3)) "$text" "$C_RESET"; }
+draw_blank(){ printf "%b║%-*s║%b\n" "$C_BOX" "$inner_width" " " "$C_RESET"; }
+draw_text() { local text="$1"; printf "%b║ %-*s║%b\n" "$C_BOX" $((inner_width - 1)) "$text" "$C_RESET"; }
 
-# 绘制一页菜单
+# 绘制页面
 print_page() {
   local page="$1"
   local start=$(( (page - 1) * PER_PAGE ))
@@ -55,30 +53,28 @@ print_page() {
   clear
   draw_top
   title="脚本管理器 (by Moreanp)"
-  center=$(( (term_width - ${#title}) / 2 ))
-  printf "%b║%*s%s%*s║%b\n" "$C_BOX" "$center" "" "$title" "$((term_width - center - ${#title} - 2))" "" "$C_RESET"
+  padding=$(( (inner_width - ${#title}) / 2 ))
+  printf "%b║%*s%s%*s║%b\n" "$C_BOX" "$padding" "" "$C_TITLE$title$C_RESET" "$((inner_width - padding - ${#title}))" "" "$C_RESET"
   draw_mid
 
   for slot in $(seq 0 $((PER_PAGE-1))); do
     idx=$(( start + slot ))
     if (( idx <= end )); then
       name="${ALL_LINES[idx]%%|*}"
-      printf "%b║%b[%s]%b  %-*s║%b\n" \
-        "$C_BOX" "$C_KEY" "$slot" "$C_BOX" $((term_width-9)) "$(echo -e "$C_NAME$name$C_RESET")" "$C_RESET"
+      printf "%b║ %b[%s]%b %-*s║%b\n" \
+        "$C_BOX" "$C_KEY" "$slot" "$C_BOX" $((inner_width - 6)) "$(echo -e "$C_NAME$name$C_RESET")" "$C_RESET"
     else
       draw_blank
     fi
   done
 
   draw_mid
-  page_info="第 $page/$PAGES 页   共 $TOTAL 项"
-  draw_text "$page_info"
+  draw_text "第 $page/$PAGES 页   共 $TOTAL 项"
   draw_text "[ n ] 下一页   [ b ] 上一页"
-  draw_text "[ q ] 退出     [ 0-9 ] 选择当前页对应项"
+  draw_text "[ q ] 退出     [ 0-9 ] 选择"
   draw_bot
 }
 
-# 执行选中项
 run_slot() {
   local page="$1" slot="$2"
   local start=$(( (page - 1) * PER_PAGE ))
