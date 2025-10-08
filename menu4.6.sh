@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 最终稳定版菜单：深红边框 + 左缩进美化 + 全角字符支持 + 修复标题行和输入提示颜色
+# 完整稳定美化版菜单
 
 set -o errexit
 set -o pipefail
@@ -8,7 +8,7 @@ set -o nounset
 CONFIG_URL="https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/scripts.conf"
 PER_PAGE=10
 BOX_WIDTH=50
-LEFT_INDENT="        "   # 左侧缩进 8 个空格
+LEFT_INDENT="        "  # 左缩进 8 个空格
 
 TMP_CONF="$(mktemp -t menu_conf.XXXXXX)"
 trap 'rm -f "$TMP_CONF"' EXIT
@@ -24,10 +24,10 @@ PAGES=$(( (TOTAL + PER_PAGE - 1) / PER_PAGE ))
 
 # ====== 色彩定义 ======
 C_RESET=$'\033[0m'
-C_BOX=$'\033[38;5;160m'      # 深红色边框
-C_TITLE=$'\033[1;38;5;203m'  # 标题亮红
-C_KEY=$'\033[1;38;5;82m'     # 序号亮绿
-C_NAME=$'\033[1;38;5;39m'    # 名称亮蓝
+C_BOX=$'\033[38;5;160m'       # 深红色边框
+C_TITLE=$'\033[1;38;5;203m'   # 标题亮红
+C_KEY=$'\033[1;38;5;82m'      # 序号亮绿
+C_NAME=$'\033[1;38;5;39m'     # 名称亮蓝
 C_DIV=$'\033[38;5;240m'
 C_HINT=$'\033[0;37m'
 # =====================
@@ -36,7 +36,7 @@ draw_line() { printf "%b╔%s╗%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BO
 draw_mid()  { printf "%b╠%s╣%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 
-# 计算字符串宽度（支持全角和ANSI颜色码）
+# 计算字符串宽度（全角+半角+ANSI颜色码支持）
 str_width() {
   local text="$1" clean_text len=0 i char code
   clean_text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
@@ -44,10 +44,10 @@ str_width() {
   for ((i=0;i<${#clean_text};i++)); do
     char="${clean_text:i:1}"
     code=$(printf '%d' "'$char")
-    if (( code >= 19968 && code <= 40959 )) || \
-       (( code >= 65281 && code <= 65519 )) || \
-       (( code >= 12288 && code <= 12351 )) || \
-       (( code >= 12352 && code <= 12543 )); then
+    if (( (code >= 19968 && code <= 40959) ||   # 中文
+          (code >= 65281 && code <= 65519) ||   # 全角符号
+          (code >= 12288 && code <= 12351) ||   # 中文标点
+          (code >= 12352 && code <= 12543) )) ; then  # 日文假名
       len=$((len+2))
     else
       len=$((len+1))
@@ -56,17 +56,17 @@ str_width() {
   echo "$len"
 }
 
-# 绘制文本行（左缩进）
+# 绘制文本行
 draw_text() {
   local text="$1"
   local width=$(str_width "$text")
   local indent_len=${#LEFT_INDENT}
   local padding=$((BOX_WIDTH - width - indent_len - 2))
-  ((padding < 0)) && padding=0
-  printf "%b║%s%s%*s%b║%b\n" "$C_BOX" "$LEFT_INDENT" "$text" "$padding" "" "$C_BOX" "$C_RESET"
+  ((padding<0)) && padding=0
+  printf "%b║%s%s%*s║%b\n" "$C_BOX" "$LEFT_INDENT" "$text" "$padding" "" "$C_BOX" "$C_RESET"
 }
 
-# 绘制标题居中（边框颜色统一）
+# 绘制标题行居中
 draw_title() {
   local title="$1"
   local width=$(str_width "$title")
@@ -83,7 +83,7 @@ print_page() {
 
   clear
   draw_line
-  draw_title "$C_TITLE 脚本管理器 (by Moreanp) $C_RESET"
+  draw_title "脚本管理器 (by Moreanp)"
   draw_mid
 
   for slot in $(seq 0 $((PER_PAGE-1))); do
@@ -133,6 +133,7 @@ run_slot() {
   read -rp $'按回车返回菜单...' _
 }
 
+# 主循环
 page=1
 while true; do
   print_page "$page"
