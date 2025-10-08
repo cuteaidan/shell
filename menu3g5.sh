@@ -42,17 +42,16 @@ draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BO
 
 draw_text() {
   local text="$1"
-  local clean_text len=0 i char code
+  local clean_text len=0 i char
 
-  # 去掉 ANSI 颜色码
+  # 去掉 ANSI 颜色序列
   clean_text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
 
   # 计算可见长度
   len=0
   for ((i=0; i<${#clean_text}; i++)); do
     char="${clean_text:i:1}"
-    code=$(printf '%d' "'$char")
-    # 中文 / 全角符号
+    # 中文/全角符号宽度=2，其它=1
     if [[ "$char" =~ [\u4E00-\u9FFF\u3000-\u303F] ]]; then
       len=$((len + 2))
     else
@@ -60,13 +59,14 @@ draw_text() {
     fi
   done
 
-  # 计算右侧填充
-  local padding=$((BOX_WIDTH - len - 3))  # 3 = 左边框 + 左侧空格 + 右边框
+  # 计算右侧填充空格
+  local padding=$((BOX_WIDTH - len - 2))  # 2 = 左右边框各 1
   ((padding < 0)) && padding=0
 
-  # 打印行，右侧边框颜色统一
-  printf "%b║ %s%*s║%b\n" "$C_BOX" "$text" "$padding" "" "$C_BOX"
+  # 输出行，右侧边框颜色统一
+  printf "%b║%s%*s║%b\n" "$C_BOX" "$text" "$padding" "" "$C_BOX"
 }
+
 
 # 绘制菜单页
 print_page() {
