@@ -42,25 +42,28 @@ draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BO
 
 draw_text() {
   local text="$1"
-  local adjust="${2:-0}"
-  local clean_text len=0 i char
+  local visible_len
 
   # 去掉 ANSI 颜色码
+  local clean_text
   clean_text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
 
-  # 计算可见宽度
-  len=0
-  for ((i=0; i<${#clean_text}; i++)); do
-    char="${clean_text:i:1}"
-    if [[ "$char" =~ [\u4E00-\u9FFF\u3000-\u303F] ]]; then
-      len=$((len + 2))
-    else
-      len=$((len + 1))
-    fi
-  done
+  # 使用 awk 替换中文/全角为两个字符计算长度
+  visible_len=$(echo -ne "$clean_text" | awk '{
+    len=0;
+    for(i=1;i<=length($0);i++){
+      c=substr($0,i,1);
+      if(c ~ /[\u4E00-\u9FFF\u3000-\u303F]/) {
+        len+=2;
+      } else {
+        len+=1;
+      }
+    }
+    print len
+  }')
 
   # 右侧填充空格
-  local padding=$((BOX_WIDTH - len - 2 + adjust))  # 2 = 左右边框
+  local padding=$((BOX_WIDTH - visible_len - 2)) # 2 = 左右边框
   ((padding < 0)) && padding=0
 
   # 打印行
