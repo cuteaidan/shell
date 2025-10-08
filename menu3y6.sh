@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 精修稳定版：防卡死输入 + 紧凑窗口 + 高饱和橘色边框 + 完美对齐
+# 精修稳定版：防卡死输入 + 紧凑窗口 + 高饱和橘色边框 + 完美对齐 + 全角符号支持
 # 用法：bash <(curl -fsSL https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/menu.sh)
 
 set -o errexit
@@ -40,20 +40,24 @@ draw_line() { printf "%b╔%s╗%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BO
 draw_mid()  { printf "%b╠%s╣%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 
-# 绘制文本行，自动计算全半角宽度，保证右侧边框橘色
+# 绘制文本行，自动计算全半角宽度，支持全角符号，保证右侧边框橘色
 draw_text() {
   local text="$1"
   local clean_text len=0 i char code
 
-  # 去掉 ANSI 颜色码计算长度
+  # 去掉 ANSI 颜色码
   clean_text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
 
   len=0
   for ((i=0; i<${#clean_text}; i++)); do
     char="${clean_text:i:1}"
     code=$(printf '%d' "'$char")
-    # 中文/全角判断
-    if (( code >= 19968 && code <= 40959 )); then
+    # 中文 / 全角符号判断
+    if (( (code >= 19968 && code <= 40959) ||   # 中文常用字符
+          (code >= 65281 && code <= 65519) ||   # 全角标点（！～）包括（）、【】等
+          (code >= 12288 && code <= 12351) ||   # 中文标点
+          (code >= 12352 && code <= 12543)      # 日文假名范围（可选）
+        )); then
       len=$((len + 2))
     else
       len=$((len + 1))
@@ -94,6 +98,7 @@ print_page() {
   done
 
   draw_mid
+  # 分页信息与控制行
   draw_text "第 $page/$PAGES 页   共 $TOTAL 项"
   draw_text "[ n ] 下一页   [ b ] 上一页"
   draw_text "[ q ] 退出     [ 0-9 ] 选择"
