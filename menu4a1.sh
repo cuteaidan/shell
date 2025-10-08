@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 完整最终版菜单脚本（修复ANSI颜色显示、边框、对齐、美化）
+# 最终稳定版菜单脚本（修复ANSI颜色显示、边框、对齐、美化）
 
 set -o errexit
 set -o pipefail
@@ -38,7 +38,6 @@ C_HINT="\033[1;32m"          # 输入提示绿色
 # ====== 宽度计算函数（支持中文/全角） ======
 str_width() {
   local text="$1"
-  # 去掉 ANSI 颜色码
   text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
   local len=0 char code
   for ((i=0;i<${#text};i++)); do
