@@ -40,12 +40,32 @@ draw_line() { printf "%b╔%s╗%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BO
 draw_mid()  { printf "%b╠%s╣%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 
+# 绘制文本行，自动计算全半角宽度，ANSI 颜色不影响对齐
 draw_text() {
   local text="$1"
-  local len=$(echo -ne "$text" | wc -c)
-  local padding=$((BOX_WIDTH - len - 3))
+  local clean_text len=0 i char code
+
+  # 去掉 ANSI 颜色码
+  clean_text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
+
+  len=0
+  for ((i=0; i<${#clean_text}; i++)); do
+    char="${clean_text:i:1}"
+    # 中文/全角判断：CJK 常用中文 19968-40959 (十进制)
+    code=$(printf '%d' "'$char")
+    if (( code >= 19968 && code <= 40959 )); then
+      len=$((len + 2))
+    else
+      len=$((len + 1))
+    fi
+  done
+
+  # 右侧填充空格
+  local padding=$((BOX_WIDTH - len - 2))  # 2 = 左右边框
   ((padding < 0)) && padding=0
-  printf "%b║ %s%*s║%b\n" "$C_BOX" "$text" "$padding" "" "$C_RESET"
+
+  # 打印行
+  printf "%b║%s%*s║%b\n" "$C_BOX" "$text" "$padding" "" "$C_BOX"
 }
 
 # 绘制菜单页
@@ -59,24 +79,26 @@ print_page() {
   draw_line
   local title="脚本管理器 (by Moreanp)"
   local pad=$(( (BOX_WIDTH - ${#title} - 2) / 2 ))
-  printf "%b║%*s%s%*s║%b\n" "$C_BOX" "$pad" "" "$title" "$((BOX_WIDTH - pad - ${#title} - 7))" "" "$C_RESET"
+  draw_text "$(printf '%*s%s%*s' "$pad" '' "$title" "$((BOX_WIDTH - pad - ${#title} - 2))" '')"
   draw_mid
 
+  # 序号行
   for slot in $(seq 0 $((PER_PAGE-1))); do
     idx=$(( start + slot ))
     if (( idx <= end )); then
       name="${ALL_LINES[idx]%%|*}"
-      printf "%b║ %b[%d]%b %-*s║%b\n" \
-        "$C_BOX" "$C_KEY" "$slot" "$C_BOX" $((BOX_WIDTH - 10)) "$(echo -e "$C_NAME$name$C_RESET")" "$C_RESET"
+      # 组合序号和脚本名带颜色
+      line="[$slot] $C_NAME$name$C_RESET"
+      draw_text " $C_KEY$line$C_RESET"
     else
       draw_text ""
     fi
   done
 
   draw_mid
-  draw_text "第 $page/$PAGES 页   共 $TOTAL 项"
-  draw_text "        [ n ] 下一页   [ b ] 上一页    "
-  draw_text "        [ q ] 退出     [ 0-9 ] 选择   "
+  draw_text " 第 $page/$PAGES 页   共 $TOTAL 项"
+  draw_text " [ n ] 下一页   [ b ] 上一页"
+  draw_text " [ q ] 退出     [ 0-9 ] 选择"
   draw_bot
 }
 
