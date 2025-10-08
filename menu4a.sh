@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 完整最终版菜单脚本：修复边框、对齐、美化、全角字符支持
+# 完整最终版菜单脚本（修复ANSI颜色显示、边框、对齐、美化）
 
 set -o errexit
 set -o pipefail
@@ -8,8 +8,8 @@ set -o nounset
 # ============== 配置 ==============
 CONFIG_URL="https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/scripts.conf"
 PER_PAGE=10
-BOX_WIDTH=50   # 固定宽度
-LEFT_INDENT="        "  # 选项左侧缩进
+BOX_WIDTH=50
+LEFT_INDENT="        "  # 左侧缩进
 # =================================
 
 TMP_CONF="$(mktemp -t menu_conf.XXXXXX)"
@@ -62,12 +62,11 @@ draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BO
 # ====== 绘制文本行 ======
 draw_text() {
   local text="$1"
-  # 去掉换行符
   text="${text//$'\n'/}"
   local width=$(str_width "$text")
   local padding=$((BOX_WIDTH - width - ${#LEFT_INDENT} - 2))
   ((padding<0)) && padding=0
-  printf "%b║%s%s%*s║%b\n" "$C_BOX" "$LEFT_INDENT" "$text" "$padding" "" "$C_RESET"
+  printf "%b║%s%s%*s║%b\n" "$C_BOX" "$LEFT_INDENT" "$text" "$padding" "" "$C_BOX"
 }
 
 # ====== 绘制标题 ======
@@ -76,7 +75,7 @@ draw_title() {
   local width=$(str_width "$title")
   local left_pad=$(( (BOX_WIDTH - width - 2)/2 ))
   local right_pad=$((BOX_WIDTH - width - left_pad - 2))
-  printf "%b║%*s%s%*s║%b\n" "$C_BOX" "$left_pad" "" "$title" "$right_pad" "" "$C_RESET"
+  printf "%b║%*s%b%s%b%*s║%b\n" "$C_BOX" "$left_pad" "" "$C_TITLE" "$title" "$C_RESET" "$right_pad" "" "$C_BOX"
 }
 
 # ====== 绘制菜单页 ======
