@@ -42,31 +42,29 @@ draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BO
 
 draw_text() {
   local text="$1"
-  local visible_len
+  local clean_text len=0 i char code
 
   # 去掉 ANSI 颜色码
-  local clean_text
   clean_text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
 
-  # 使用 awk 替换中文/全角为两个字符计算长度
-  visible_len=$(echo -ne "$clean_text" | awk '{
-    len=0;
-    for(i=1;i<=length($0);i++){
-      c=substr($0,i,1);
-      if(c ~ /[\u4E00-\u9FFF\u3000-\u303F]/) {
-        len+=2;
-      } else {
-        len+=1;
-      }
-    }
-    print len
-  }')
+  len=0
+  for ((i=0; i<${#clean_text}; i++)); do
+    char="${clean_text:i:1}"
+    # 获取字符 UTF-8 的十进制值
+    code=$(printf '%d' "'$char")
+    # 中文/全角判断：CJK 常用中文 19968-40959 (十进制)
+    if (( code >= 19968 && code <= 40959 )); then
+      len=$((len + 2))
+    else
+      len=$((len + 1))
+    fi
+  done
 
   # 右侧填充空格
-  local padding=$((BOX_WIDTH - visible_len - 2)) # 2 = 左右边框
+  local padding=$((BOX_WIDTH - len - 2))  # 2 = 左右边框
   ((padding < 0)) && padding=0
 
-  # 打印行
+  # 打印行，右侧边框颜色统一
   printf "%b║%s%*s║%b\n" "$C_BOX" "$text" "$padding" "" "$C_BOX"
 }
 
