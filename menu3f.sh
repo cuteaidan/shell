@@ -75,9 +75,8 @@ print_page() {
 
   draw_mid
   draw_text "第 $page/$PAGES 页   共 $TOTAL 项"
-  draw_text "     [ n ] 下一页   [ b ] 上一页"
-  draw_text "     [ q ] 退出     [ 0-9 ] 选择"
-  draw_text "  按回车确认输入（防止终端卡死）"
+  draw_text "        [ n ] 下一页   [ b ] 上一页    "
+  draw_text "        [ q ] 退出     [ 0-9 ] 选择   "
   draw_bot
 }
 
