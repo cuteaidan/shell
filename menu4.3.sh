@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 深红色美化版菜单：防卡死输入 + 左侧缩进 + 标题居中 + 全角符号支持
+# 深红色美化版菜单：修复标题行边框颜色 + 左侧缩进 + 全角符号支持
 
 set -o errexit
 set -o pipefail
@@ -42,14 +42,12 @@ draw_text() {
   local text="$1"
   local clean_text len=0 i char code
 
-  # 去掉 ANSI 颜色码
   clean_text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
 
   len=0
   for ((i=0; i<${#clean_text}; i++)); do
     char="${clean_text:i:1}"
     code=$(printf '%d' "'$char")
-    # 中文 / 全角符号 / 日文假名
     if (( code >= 19968 && code <= 40959 )) || \
        (( code >= 65281 && code <= 65519 )) || \
        (( code >= 12288 && code <= 12351 )) || \
@@ -61,13 +59,13 @@ draw_text() {
   done
 
   local indent_len=${#LEFT_INDENT}
-  local padding=$((BOX_WIDTH - len - indent_len - 2))  # 2 = 左右边框
+  local padding=$((BOX_WIDTH - len - indent_len - 2))
   ((padding < 0)) && padding=0
 
   printf "%b║%s%s%*s%b║%b\n" "$C_BOX" "$LEFT_INDENT" "$text" "$padding" "" "$C_BOX" "$C_RESET"
 }
 
-# 绘制标题行（居中）
+# 绘制标题居中
 draw_title() {
   local title="$1"
   local clean_text len=0 i char code
@@ -87,7 +85,7 @@ draw_title() {
     fi
   done
 
-  local left_pad=$(( (BOX_WIDTH - len - 2)/2 ))  # 2 = 左右边框
+  local left_pad=$(( (BOX_WIDTH - len - 2)/2 ))
   local right_pad=$((BOX_WIDTH - len - left_pad - 2))
   printf "%b║%*s%s%*s║%b\n" "$C_BOX" "$left_pad" "" "$title" "$right_pad" "" "$C_BOX" "$C_RESET"
 }
