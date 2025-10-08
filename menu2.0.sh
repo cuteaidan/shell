@@ -2,7 +2,7 @@
 # 彩色分页脚本菜单管理器（支持远程配置）
 # 用法: bash <(curl -Ls https://raw.githubusercontent.com/xxx/main/menu.sh)
 
-REMOTE_CONF="https://raw.githubusercontent.com/dcj1104/lib/refs/heads/main/scripts.conf"
+REMOTE_CONF="https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/scripts.conf"
 TMP_CONF="/tmp/scripts.conf.$$"
 
 # 下载配置文件
