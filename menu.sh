@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# 最终稳定版菜单脚本
-# 深蓝色边框 + ANSI颜色正常显示 + 全角字符对齐 + 居中显示
 
 set -o errexit
 set -o pipefail
