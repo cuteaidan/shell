@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# 最终美化版菜单：防卡死输入 + 黄色边框 + 左侧缩进 + 全角符号支持
-# 用法：bash <(curl -fsSL https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/menu.sh)
+# 深红色美化版菜单：防卡死输入 + 左侧缩进 + 标题居中 + 全角符号支持
 
 set -o errexit
 set -o pipefail
@@ -25,8 +24,8 @@ PAGES=$(( (TOTAL + PER_PAGE - 1) / PER_PAGE ))
 
 # ====== 色彩定义 ======
 C_RESET=$'\033[0m'
-C_BOX=$'\033[38;5;228m'      # 较柔和黄色边框
-C_TITLE=$'\033[1;38;5;220m'  # 标题亮黄
+C_BOX=$'\033[38;5;160m'      # 深红色边框
+C_TITLE=$'\033[1;38;5;203m'  # 标题亮红
 C_KEY=$'\033[1;38;5;82m'     # 序号亮绿
 C_NAME=$'\033[1;38;5;39m'    # 名称亮蓝
 C_DIV=$'\033[38;5;240m'
@@ -38,7 +37,7 @@ draw_line() { printf "%b╔%s╗%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BO
 draw_mid()  { printf "%b╠%s╣%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 
-# 绘制文本行，自动计算全半角宽度，支持全角符号，保证右侧边框橘色
+# 绘制文本行，支持全角字符和ANSI颜色
 draw_text() {
   local text="$1"
   local clean_text len=0 i char code
@@ -68,6 +67,31 @@ draw_text() {
   printf "%b║%s%s%*s%b║%b\n" "$C_BOX" "$LEFT_INDENT" "$text" "$padding" "" "$C_BOX" "$C_RESET"
 }
 
+# 绘制标题行（居中）
+draw_title() {
+  local title="$1"
+  local clean_text len=0 i char code
+
+  clean_text=$(echo -ne "$title" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
+  len=0
+  for ((i=0; i<${#clean_text}; i++)); do
+    char="${clean_text:i:1}"
+    code=$(printf '%d' "'$char")
+    if (( code >= 19968 && code <= 40959 )) || \
+       (( code >= 65281 && code <= 65519 )) || \
+       (( code >= 12288 && code <= 12351 )) || \
+       (( code >= 12352 && code <= 12543 )); then
+      len=$((len + 2))
+    else
+      len=$((len + 1))
+    fi
+  done
+
+  local left_pad=$(( (BOX_WIDTH - len - 2)/2 ))  # 2 = 左右边框
+  local right_pad=$((BOX_WIDTH - len - left_pad - 2))
+  printf "%b║%*s%s%*s║%b\n" "$C_BOX" "$left_pad" "" "$title" "$right_pad" "" "$C_BOX" "$C_RESET"
+}
+
 print_page() {
   local page="$1"
   local start=$(( (page - 1) * PER_PAGE ))
@@ -76,8 +100,7 @@ print_page() {
 
   clear
   draw_line
-  local title="脚本管理器 (by Moreanp)"
-  draw_text "$(printf '%*s%s' $(( (BOX_WIDTH - ${#title})/2 )) '' "$C_TITLE$title$C_RESET")"
+  draw_title "$C_TITLE 脚本管理器 (by Moreanp) $C_RESET"
   draw_mid
 
   for slot in $(seq 0 $((PER_PAGE-1))); do
