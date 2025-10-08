@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 精修稳定版：防卡死输入 + 紧凑窗口 + 高饱和橘色边框
+# 精修稳定版：防卡死输入 + 紧凑窗口 + 高饱和橘色边框 + 完美对齐
 # 用法：bash <(curl -fsSL https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/menu.sh)
 
 set -o errexit
@@ -25,7 +25,7 @@ mapfile -t ALL_LINES < <(grep -vE '^\s*#|^\s*$' "$TMP_CONF")
 TOTAL=${#ALL_LINES[@]}
 PAGES=$(( (TOTAL + PER_PAGE - 1) / PER_PAGE ))
 
-# ====== 色彩定义（用 $'...' 解析 ANSI 转义） ======
+# ====== 色彩定义 ======
 C_RESET=$'\033[0m'
 C_BOX=$'\033[38;5;208m'
 C_TITLE=$'\033[1;38;5;202m'
@@ -40,7 +40,7 @@ draw_line() { printf "%b╔%s╗%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BO
 draw_mid()  { printf "%b╠%s╣%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 
-# 绘制文本行，自动计算全半角宽度，ANSI 颜色不影响对齐
+# 绘制文本行，自动计算全半角宽度，保证右侧边框橘色
 draw_text() {
   local text="$1"
   local clean_text len=0 i char code
@@ -52,7 +52,7 @@ draw_text() {
   for ((i=0; i<${#clean_text}; i++)); do
     char="${clean_text:i:1}"
     code=$(printf '%d' "'$char")
-    # 中文/全角判断：CJK 常用中文 19968-40959 (十进制)
+    # 中文/全角判断
     if (( code >= 19968 && code <= 40959 )); then
       len=$((len + 2))
     else
@@ -60,11 +60,11 @@ draw_text() {
     fi
   done
 
-  local padding=$((BOX_WIDTH - len - 2))  # 2 = 左右边框
+  # 左侧固定空格 1，右侧 padding
+  local padding=$((BOX_WIDTH - len - 3))  # 3 = 左右边框 + 左侧空格
   ((padding < 0)) && padding=0
 
-  # printf 输出 ANSI 颜色原样显示
-  printf "%b║%s%*s║%b\n" "$C_BOX" "$text" "$padding" "" "$C_BOX"
+  printf "%b║ %s%*s%b║%b\n" "$C_BOX" "$text" "$padding" "" "$C_BOX" "$C_RESET"
 }
 
 # 绘制菜单页
@@ -86,16 +86,16 @@ print_page() {
     if (( idx <= end )); then
       name="${ALL_LINES[idx]%%|*}"
       line="$C_KEY[$slot] $C_NAME$name$C_RESET"
-      draw_text " $line"
+      draw_text "$line"
     else
       draw_text ""
     fi
   done
 
   draw_mid
-  draw_text " 第 $page/$PAGES 页   共 $TOTAL 项"
-  draw_text " [ n ] 下一页   [ b ] 上一页"
-  draw_text " [ q ] 退出     [ 0-9 ] 选择"
+  draw_text "第 $page/$PAGES 页   共 $TOTAL 项"
+  draw_text "[ n ] 下一页   [ b ] 上一页"
+  draw_text "[ q ] 退出     [ 0-9 ] 选择"
   draw_bot
 }
 
