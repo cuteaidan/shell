@@ -60,11 +60,10 @@ draw_text() {
     fi
   done
 
-  # 左侧固定空格 1，右侧 padding
-  local padding=$((BOX_WIDTH - len - 3))  # 3 = 左右边框 + 左侧空格
+  local padding=$((BOX_WIDTH - len - 2))  # 2 = 左右边框
   ((padding < 0)) && padding=0
 
-  printf "%b║ %s%*s%b║%b\n" "$C_BOX" "$text" "$padding" "" "$C_BOX" "$C_RESET"
+  printf "%b║%s%*s%b║%b\n" "$C_BOX" "$text" "$padding" "" "$C_BOX" "$C_RESET"
 }
 
 # 绘制菜单页
@@ -77,7 +76,9 @@ print_page() {
   clear
   draw_line
   local title="脚本管理器 (by Moreanp)"
-  draw_text "$(printf '%*s%s%*s' $(((BOX_WIDTH - ${#title})/2)) '' "$C_TITLE$title$C_RESET" $(((BOX_WIDTH - ${#title})/2 - 2)) '')"
+  # 居中标题
+  local pad=$(( (BOX_WIDTH - ${#title}) / 2 ))
+  draw_text "$(printf '%*s%s' $pad '' "$C_TITLE$title$C_RESET")"
   draw_mid
 
   # 序号行
