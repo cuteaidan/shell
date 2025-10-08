@@ -57,7 +57,7 @@ print_page() {
   draw_line
   local title="脚本管理器 (by Moreanp)"
   local pad=$(( (BOX_WIDTH - ${#title} - 2) / 2 ))
-  printf "%b║%*s%s%*s║%b\n" "$C_BOX" "$pad" "" "$title" "$((BOX_WIDTH - pad - ${#title} - 4))" "" "$C_RESET"
+  printf "%b║%*s%s%*s║%b\n" "$C_BOX" "$pad" "" "$title" "$((BOX_WIDTH - pad - ${#title} - 5))" "" "$C_RESET"
   draw_mid
 
   for slot in $(seq 0 $((PER_PAGE-1))); do
