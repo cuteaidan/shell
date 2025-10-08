@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# final 稳定版：彩色 + 框框 + 右侧对齐 + 分页 + 远程配置
-# 用法：bash <(curl -fsSL https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/menu.sh)
-
 set -o errexit
 set -o pipefail
 set -o nounset
@@ -15,60 +12,62 @@ BOX_WIDTH=50
 TMP_CONF="$(mktemp -t menu_conf.XXXXXX)"
 trap 'rm -f "$TMP_CONF"' EXIT
 
-# 下载配置文件
 if ! curl -fsSL "$CONFIG_URL" -o "$TMP_CONF"; then
     echo "❌ 无法下载配置文件: $CONFIG_URL"
     exit 1
 fi
 
-# 读取脚本列表，忽略空行和注释
 mapfile -t ALL_LINES < <(grep -vE '^\s*#|^\s*$' "$TMP_CONF")
 TOTAL=${#ALL_LINES[@]}
 PAGES=$(( (TOTAL + PER_PAGE - 1) / PER_PAGE ))
 
-# ===== 色彩定义 =====
+# ===== 色彩 =====
 C_RESET="\033[0m"
-C_BOX="\033[38;5;208m"   # 高饱和橙色
+C_BOX="\033[38;5;208m"   # 橙色边框
 C_TITLE="\033[1;38;5;202m"
-C_KEY="\033[1;32m"       # 亮绿色序号
-C_NAME="\033[1;38;5;39m" # 亮蓝色脚本名
+C_KEY="\033[1;32m"       # 绿色序号
+C_NAME="\033[1;38;5;39m" # 蓝色脚本名
 C_DIV="\033[38;5;240m"
 C_HINT="\033[0;37m"
 # ====================
 
-# ===== 辅助绘制函数 =====
+# 计算可见长度（去掉 ANSI）
+visible_len() {
+    local str="$1"
+    echo -n "$str" | sed 's/\x1B\[[0-9;]*[JKmsu]//g' | wc -c
+}
+
+# ===== 绘制 =====
 draw_line() { printf "%b╔%s╗%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_mid()  { printf "%b╠%s╣%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_text() {
     local text="$1"
-    local len=$(echo -ne "$text" | wc -c)
-    local padding=$((BOX_WIDTH - len - 3))
-    ((padding<0)) && padding=0
-    printf "%b║ %s%*s║%b\n" "$C_BOX" "$text" "$padding" "" "$C_RESET"
+    local len=$(visible_len "$text")
+    local pad=$((BOX_WIDTH - len - 3))
+    ((pad<0)) && pad=0
+    printf "%b║ %s%*s║%b\n" "$C_BOX" "$text" "$pad" "" "$C_RESET"
 }
 
-# 绘制菜单页
 print_page() {
     local page="$1"
-    local start=$(( (page-1) * PER_PAGE ))
-    local end=$(( start + PER_PAGE - 1 ))
-    (( end >= TOTAL )) && end=$(( TOTAL - 1 ))
+    local start=$(( (page-1)*PER_PAGE ))
+    local end=$(( start + PER_PAGE -1 ))
+    (( end >= TOTAL )) && end=$(( TOTAL-1 ))
 
     clear
     draw_line
-    local title="脚本管理器 (by Moreanp)"
-    local pad=$(( (BOX_WIDTH - ${#title} - 2)/2 ))
-    printf "%b║%*s%s%*s║%b\n" "$C_BOX" "$pad" "" "$C_TITLE$title$C_RESET" "$((BOX_WIDTH - pad - ${#title} - 2))" "" "$C_RESET"
+    local title="${C_TITLE}脚本管理器 (by Moreanp)${C_RESET}"
+    local pad=$(( (BOX_WIDTH - $(visible_len "$title") -2)/2 ))
+    printf "%b║%*s%s%*s║%b\n" "$C_BOX" "$pad" "" "$title" "$((BOX_WIDTH - pad - $(visible_len "$title") -2))" "" "$C_RESET"
     draw_mid
 
     for slot in $(seq 0 $((PER_PAGE-1))); do
         idx=$(( start + slot ))
         if (( idx <= end )); then
             name="${ALL_LINES[idx]%%|*}"
-            # 序号和脚本名对齐
-            printf "%b║ %b[%d]%b %-*s║%b\n" \
-                "$C_BOX" "$C_KEY" "$slot" "$C_RESET" $((BOX_WIDTH - 10)) "$(echo -e "$C_NAME$name$C_RESET")" "$C_RESET"
+            text="$(echo -e "${C_KEY}[$slot]${C_RESET} ${C_NAME}${name}${C_RESET}")"
+            draw_text "$text"
         else
             draw_text ""
         fi
@@ -81,10 +80,9 @@ print_page() {
     draw_bot
 }
 
-# 执行选项
 run_slot() {
     local page="$1" slot="$2"
-    local start=$(( (page-1) * PER_PAGE ))
+    local start=$(( (page-1)*PER_PAGE ))
     local idx=$(( start + slot ))
     (( idx<0 || idx>=TOTAL )) && { echo "❌ 无效选项"; return; }
 
