@@ -9,7 +9,7 @@ set -o nounset
 # ============== 配置 ==============
 CONFIG_URL="https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/scripts.conf"
 PER_PAGE=10
-BOX_WIDTH=50   # 固定宽度
+BOX_WIDTH=50
 # =================================
 
 TMP_CONF="$(mktemp -t menu_conf.XXXXXX)"
@@ -53,11 +53,10 @@ draw_text() {
     char="${clean_text:i:1}"
     code=$(printf '%d' "'$char")
     # 中文 / 全角符号判断
-    if (( (code >= 19968 && code <= 40959) ||   # 中文常用字符
-          (code >= 65281 && code <= 65519) ||   # 全角标点（！～）包括（）、【】等
-          (code >= 12288 && code <= 12351) ||   # 中文标点
-          (code >= 12352 && code <= 12543)      # 日文假名范围（可选）
-        )); then
+    if (( code >= 19968 && code <= 40959 )) || \
+       (( code >= 65281 && code <= 65519 )) || \
+       (( code >= 12288 && code <= 12351 )) || \
+       (( code >= 12352 && code <= 12543 )); then
       len=$((len + 2))
     else
       len=$((len + 1))
@@ -80,7 +79,6 @@ print_page() {
   clear
   draw_line
   local title="脚本管理器 (by Moreanp)"
-  # 居中标题
   local pad=$(( (BOX_WIDTH - ${#title}) / 2 ))
   draw_text "$(printf '%*s%s' $pad '' "$C_TITLE$title$C_RESET")"
   draw_mid
