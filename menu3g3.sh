@@ -40,37 +40,38 @@ draw_line() { printf "%b╔%s╗%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BO
 draw_mid()  { printf "%b╠%s╣%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 
+# 精确计算字符终端显示宽度并对齐右侧边框
 draw_text() {
   local text="$1"
-  local clean_text
-  local len=0
-  local i char
+  local clean_text len=0
+  local i char code
 
   # 去掉 ANSI 转义序列
   clean_text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
 
-  # 计算可见长度
+  # 遍历每个字符，判断宽度
   len=0
   for ((i=0; i<${#clean_text}; i++)); do
     char="${clean_text:i:1}"
-    # 中文字符 (CJK)
-    if [[ "$char" =~ [\u4E00-\u9FFF] ]]; then
+    code=$(printf '%d' "'$char")
+    # 中文、全角符号 (CJK 和常用全角标点)
+    if [[ "$char" =~ [\u4E00-\u9FFF\u3000-\u303F] ]]; then
       len=$((len + 2))
-    # 全角符号（兼容常用全角标点）
-    elif [[ "$char" =~ [\u3000-\u303F] ]]; then
-      len=$((len + 2))
-    else
+    # ASCII 可打印字符 (32~126)
+    elif (( code >= 32 && code <= 126 )); then
       len=$((len + 1))
+    # 其他字符保守算 2
+    else
+      len=$((len + 2))
     fi
   done
 
-  # 右侧填充空格，保证总宽度 = BOX_WIDTH
-  local padding=$((BOX_WIDTH - len - 3))  # 3 = 左右边框 + 左侧空格
+  local padding=$((BOX_WIDTH - len - 3))
   ((padding < 0)) && padding=0
 
-  # 打印行，右侧边框颜色统一为 C_BOX
   printf "%b║ %s%*s║%b\n" "$C_BOX" "$text" "$padding" "" "$C_BOX"
 }
+
 
 
 # 绘制菜单页
