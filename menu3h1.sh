@@ -95,9 +95,9 @@ print_page() {
   done
 
   draw_mid
-  draw_text "第 $page/$PAGES 页   共 $TOTAL 项"
-  draw_text "        [ n ] 下一页   [ b ] 上一页    "
-  draw_text "        [ q ] 退出     [ 0-9 ] 选择   "
+  draw_text " 第 $page/$PAGES 页   共 $TOTAL 项"
+  draw_text " [ n ] 下一页   [ b ] 上一页    "
+  draw_text " [ q ] 退出     [ 0-9 ] 选择   "
   draw_bot
 }
 
