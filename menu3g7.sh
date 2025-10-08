@@ -42,7 +42,8 @@ draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BO
 
 draw_text() {
   local text="$1"
-  local clean_text len=0 i char code
+  local adjust="${2:-0}"
+  local clean_text len=0 i char
 
   # 去掉 ANSI 颜色码
   clean_text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
@@ -51,7 +52,6 @@ draw_text() {
   len=0
   for ((i=0; i<${#clean_text}; i++)); do
     char="${clean_text:i:1}"
-    # 中文/全角字符
     if [[ "$char" =~ [\u4E00-\u9FFF\u3000-\u303F] ]]; then
       len=$((len + 2))
     else
@@ -59,11 +59,11 @@ draw_text() {
     fi
   done
 
-  # 右侧填充空格，精确对齐
-  local padding=$((BOX_WIDTH - len - 2))  # 2 = 左右边框各 1
+  # 右侧填充空格
+  local padding=$((BOX_WIDTH - len - 2 + adjust))  # 2 = 左右边框
   ((padding < 0)) && padding=0
 
-  # 打印文本行
+  # 打印行
   printf "%b║%s%*s║%b\n" "$C_BOX" "$text" "$padding" "" "$C_BOX"
 }
 
