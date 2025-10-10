@@ -1,8 +1,22 @@
 #!/usr/bin/env bash
+# === 自动提权版本 ===
 
 set -o errexit
 set -o pipefail
 set -o nounset
+
+# ===== 提权检测开始 =====
+if [ "$(id -u)" -ne 0 ]; then
+  echo -e "\033[1;33m⚠️  检测到当前用户不是 root。\033[0m"
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo -e "\033[1;31m❌ 系统未安装 sudo，请使用 root 用户运行本脚本。\033[0m"
+    exit 1
+  fi
+  echo -e "\033[1;32m🔑  请输入当前用户的密码以获取管理员权限...\033[0m"
+  exec sudo bash "$0" "$@"
+  exit $? # 以防 exec 失败
+fi
+# ===== 提权检测结束 =====
 
 CONFIG_URL="https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/scripts.conf"
 PER_PAGE=10
