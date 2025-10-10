@@ -1,23 +1,49 @@
 #!/usr/bin/env bash
-# === 自动提权版本 ===
-
+# ================================================================
+# 📜 脚本管理器 (by Moreanp)
+# 自动提权 + 临时文件自清理 + 兼容所有运行方式
+# ================================================================
 set -o errexit
 set -o pipefail
 set -o nounset
 
-# ===== 提权检测开始 =====
+# ====== 自动提权（兼容 bash <(curl …) / curl | bash / 本地文件） ======
 if [ "$(id -u)" -ne 0 ]; then
   echo -e "\033[1;33m⚠️  检测到当前用户不是 root。\033[0m"
   if ! command -v sudo >/dev/null 2>&1; then
     echo -e "\033[1;31m❌ 系统未安装 sudo，请使用 root 用户运行本脚本。\033[0m"
     exit 1
   fi
-  echo -e "\033[1;32m🔑  请输入当前用户的密码以获取管理员权限...\033[0m"
-  exec sudo bash "$0" "$@"
-  exit $? # 以防 exec 失败
-fi
-# ===== 提权检测结束 =====
+  echo -e "\033[1;32m🔑  请输入当前用户的密码以获取管理员权限（sudo）...\033[0m"
 
+  # 判断当前脚本是否为普通文件
+  if [ -f "$0" ] && [ -r "$0" ]; then
+    # 直接重启脚本
+    exec sudo -E bash "$0" "$@"
+    exit $?
+  fi
+
+  # 若为 /dev/fd 或 STDIN，则复制内容到临时文件
+  TMP_SCRIPT="$(mktemp /tmp/menu_manager.XXXXXX.sh)"
+  if [ -e "$0" ]; then
+    if ! cat "$0" > "$TMP_SCRIPT" 2>/dev/null; then
+      cat > "$TMP_SCRIPT"
+    fi
+  else
+    cat > "$TMP_SCRIPT"
+  fi
+  chmod +x "$TMP_SCRIPT"
+
+  echo -e "\033[1;34mℹ️  已将脚本内容写入临时文件：$TMP_SCRIPT\033[0m"
+  echo -e "\033[1;34m➡️  正在以 root 权限重新运行...\033[0m"
+
+  # 以 root 重新运行，并在执行完后自动删除自身
+  exec sudo -E bash -c "trap 'rm -f \"$TMP_SCRIPT\"' EXIT; bash \"$TMP_SCRIPT\" \"$@\""
+  exit $?
+fi
+# ====== 提权检测结束 ======
+
+# ====== 配置部分 ======
 CONFIG_URL="https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/scripts.conf"
 PER_PAGE=10
 BOX_WIDTH=50
@@ -37,22 +63,21 @@ PAGES=$(( (TOTAL + PER_PAGE - 1) / PER_PAGE ))
 
 # ====== 色彩定义 ======
 C_RESET="\033[0m"
-C_BOX="\033[1;38;5;202m"        # 边框颜色
-C_TITLE="\033[1;38;5;220m"    # 浅蓝色标题
-C_KEY="\033[1;32m"            # 绿色序号
-C_NAME="\033[1;38;5;39m"      # 浅蓝色脚本名
-C_HINT="\033[1;32m"            # 输入提示颜色
+C_BOX="\033[1;38;5;202m"
+C_TITLE="\033[1;38;5;220m"
+C_KEY="\033[1;32m"
+C_NAME="\033[1;38;5;39m"
+C_HINT="\033[1;32m"
 C_DIV="\033[38;5;240m"
 
-# ====== 计算字符串显示宽度（全角/半角） ======
+# ====== 宽度计算（支持全角字符） ======
 str_width() {
   local text="$1"
   text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
-  local len=0 char code
+  local len=0 i ch code
   for ((i=0;i<${#text};i++)); do
-    char="${text:i:1}"
-    code=$(printf '%d' "'$char")
-    # 中文/全角符号/日文假名等宽度2
+    ch="${text:i:1}"
+    code=$(printf '%d' "'$ch" 2>/dev/null || true)
     if (( (code>=19968 && code<=40959) || (code>=65281 && code<=65519) || (code>=12288 && code<=12351) || (code>=12352 && code<=12543) )); then
       len=$((len+2))
     else
@@ -62,14 +87,15 @@ str_width() {
   echo "$len"
 }
 
-# ====== 绘制框线 ======
+# ====== 绘制边框函数 ======
 draw_line() { printf "%b╔%s╗%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_mid()  { printf "%b╠%s╣%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 
 draw_text() {
   local text="$1"
-  local width=$(str_width "$text")
+  local width
+  width=$(str_width "$text")
   local padding=$((BOX_WIDTH - width - ${#LEFT_INDENT} - 2))
   ((padding<0)) && padding=0
   printf "%b║%s%b%*s%b║%b\n" "$C_BOX" "$LEFT_INDENT" "$text" "$padding" "" "$C_BOX" "$C_RESET"
@@ -77,12 +103,16 @@ draw_text() {
 
 draw_title() {
   local title="$1"
-  local width=$(str_width "$title")
+  local width
+  width=$(str_width "$title")
   local left_pad=$(( (BOX_WIDTH - width - 2)/2 ))
   local right_pad=$((BOX_WIDTH - width - left_pad - 2))
+  [ $left_pad -lt 0 ] && left_pad=0
+  [ $right_pad -lt 0 ] && right_pad=0
   printf "%b║%*s%b%s%b%*s%b║%b\n" "$C_BOX" "$left_pad" "" "$C_TITLE" "$title" "$C_RESET" "$right_pad" "" "$C_BOX" "$C_RESET"
 }
 
+# ====== 绘制菜单页 ======
 print_page() {
   local page="$1"
   local start=$(( (page-1)*PER_PAGE ))
@@ -111,11 +141,16 @@ print_page() {
   draw_bot
 }
 
+# ====== 执行选项 ======
 run_slot() {
   local page="$1" slot="$2"
   local start=$(( (page-1)*PER_PAGE ))
   local idx=$((start+slot))
-  ((idx<0||idx>=TOTAL)) && { echo "❌ 无效选项"; read -rp "按回车返回..." _; return; }
+  if (( idx<0 || idx>=TOTAL )); then
+    echo "❌ 无效选项"
+    read -rp "按回车返回..." _
+    return
+  fi
 
   selected="${ALL_LINES[idx]}"
   name="${selected%%|*}"
@@ -151,6 +186,6 @@ while true; do
     n|N) ((page<PAGES)) && ((page++)) || { echo "已是最后一页"; read -rp "按回车返回..." _; } ;;
     b|B) ((page>1)) && ((page--)) || { echo "已是第一页"; read -rp "按回车返回..." _; } ;;
     q|Q) clear; echo "👋 再见！"; exit 0 ;;
-    *) echo "⚠️ 无效输入，请重试"; sleep 0.8 ;;
+    *) echo "⚠️ 无效输入，请重试"; sleep 0.6 ;;
   esac
 done
