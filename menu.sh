@@ -191,7 +191,7 @@ page=1
 
 while true; do
   print_page "$page"
-  printf "%b请输入选项 (0-9 / n / b / q / 搜索关键字): %b" "$C_HINT" "$C_RESET"
+  printf "%b选项 (0-9 or 关键字): %b" "$C_HINT" "$C_RESET"
   read -r key || true
 
   case "$key" in
