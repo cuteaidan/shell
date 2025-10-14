@@ -138,8 +138,7 @@ CURRENT_PATH="$ROOT_KEY"
 # ====== 渲染菜单 ======
 render_menu() {
   local path="$1"
-  local IFS='||'
-  read -ra children <<< "${MENU_TREE[$path]}"
+  IFS='||' read -r -a children <<< "${MENU_TREE[$path]}"
   clear
   draw_line
   draw_title "脚本管理器 (by Moreanp)"
@@ -224,7 +223,7 @@ while true; do
       fi
       ;;
     [0-9]*)
-      IFS='||' read -ra children <<< "${MENU_TREE[$CURRENT_PATH]}"
+      IFS='||' read -r -a children <<< "${MENU_TREE[$CURRENT_PATH]}"
       if (( input < ${#children[@]} )); then
         selected="${children[input]}"
         full_path="$CURRENT_PATH/$selected"
