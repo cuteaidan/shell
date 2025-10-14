@@ -16,22 +16,15 @@ if [ "$(id -u)" -ne 0 ]; then
     exit $?
   fi
   TMP_SCRIPT="$(mktemp /tmp/menu_manager.XXXXXX.sh)"
-  if [ -e "$0" ]; then
-    if ! cat "$0" > "$TMP_SCRIPT" 2>/dev/null; then
-      cat > "$TMP_SCRIPT"
-    fi
-  else
-    cat > "$TMP_SCRIPT"
-  fi
+  cat > "$TMP_SCRIPT"
   chmod +x "$TMP_SCRIPT"
   echo -e "\033[1;34mℹ️  已将脚本内容写入临时文件：$TMP_SCRIPT\033[0m"
   echo -e "\033[1;34m➡️  正在以 root 权限重新运行...\033[0m"
   exec sudo -E bash -c "trap 'rm -f \"$TMP_SCRIPT\"' EXIT; bash \"$TMP_SCRIPT\" \"$@\""
   exit $?
 fi
-# ====== 提权结束 ======
 
-# ====== 配置部分 ======
+# ====== 配置 ======
 CONFIG_URL="https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/script2.conf"
 PER_PAGE=10
 BOX_WIDTH=50
@@ -56,7 +49,7 @@ C_NAME="\033[1;38;5;39m"
 C_HINT="\033[1;32m"
 C_DIV="\033[38;5;240m"
 
-# ====== 宽度计算（全角支持） ======
+# ====== 宽度计算 ======
 str_width() {
   local text="$1"
   text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
@@ -96,55 +89,43 @@ draw_title() {
   printf "%b║%*s%b%s%b%*s%b║%b\n" "$C_BOX" "$left_pad" "" "$C_TITLE" "$title" "$C_RESET" "$right_pad" "" "$C_BOX" "$C_RESET"
 }
 
-# ====== 分级菜单解析（支持空格和空字段） ======
+# ====== 分级菜单解析（修复空格和空字段） ======
 declare -A MENU_TREE
 declare -A MENU_CMD
 declare -A MENU_PARENT
+declare -A LEAF_FLAG
 ROOT_KEY="ROOT"
 MENU_TREE["$ROOT_KEY"]=""
 
 for line in "${RAW_LINES[@]}"; do
-  # 用 awk 安全拆分，保留空字段
-  IFS='|' read -r -a parts <<< "$(echo "$line" | awk -F'|' '{for(i=1;i<=NF;i++) printf "%s|",$i}')"
-  # 清理最后的多余 '|'
-  parts[-1]="${parts[-1]%|}"
+  # 安全拆分，保留空字段
+  IFS='|' read -r -a parts <<< "$line"
+  parts_len=${#parts[@]}
+  [ $parts_len -lt 2 ] && continue
 
-  # 从右往左找命令字段（第一个非空且符合 CMD:/bash/URL）
-  cmd=""
-  name=""
-  level=0
-  for ((i=${#parts[@]}-1;i>=0;i--)); do
-    if [[ "${parts[i]}" =~ ^(CMD:|bash|https?://) ]]; then
-      cmd="${parts[i]}"
-      break
-    fi
-  done
-
-  # 名称字段
+  # 名称在最左
   name="${parts[0]}"
-  # 父路径根据中间非空字段构建
+  # 命令在最右
+  cmd="${parts[-1]}"
+
+  # 构建路径
   parent="$ROOT_KEY"
-  path_fields=()
-  for ((i=1;i<${#parts[@]};i++)); do
-    if [ -n "${parts[i]}" ]; then
-      path_fields+=("${parts[i]}")
-    fi
-  done
-  # 完整路径
-  full_path="$parent"
-  for fld in "${path_fields[@]}"; do
-    full_path="$full_path/$fld"
-    # 添加子节点
-    MENU_TREE[$parent]="${MENU_TREE[$parent]} $fld"
+  for ((i=1;i<parts_len-1;i++)); do
+    fld="${parts[i]}"
+    [ -z "$fld" ] && continue
+    full_path="$parent/$fld"
+    MENU_TREE["$parent"]="${MENU_TREE["$parent"]} $fld"
     MENU_PARENT["$full_path"]="$parent"
     parent="$full_path"
   done
+
   # 添加叶子节点
   leaf_path="$parent/$name"
-  MENU_TREE[$parent]="${MENU_TREE[$parent]} $name"
+  MENU_TREE["$parent"]="${MENU_TREE["$parent"]} $name"
   MENU_PARENT["$leaf_path"]="$parent"
   if [ -n "$cmd" ]; then
     MENU_CMD["$leaf_path"]="$cmd"
+    LEAF_FLAG["$leaf_path"]=1
   fi
 done
 
@@ -197,7 +178,7 @@ search_leaf() {
   local keyword="$1"
   keyword=$(echo "$keyword" | tr '[:upper:]' '[:lower:]')
   local results=()
-  for key in "${!MENU_CMD[@]}"; do
+  for key in "${!LEAF_FLAG[@]}"; do
     local name="${key##*/}"
     name_lower=$(echo "$name" | tr '[:upper:]' '[:lower:]')
     if [[ "$name_lower" == *"$keyword"* ]]; then
@@ -240,7 +221,7 @@ while true; do
       if (( input < ${#children[@]} )); then
         selected="${children[input]}"
         full_path="$CURRENT_PATH/$selected"
-        if [ -n "${MENU_CMD[$full_path]+x}" ]; then
+        if [ -n "${LEAF_FLAG[$full_path]+x}" ]; then
           run_leaf "$full_path"
         elif [ -n "${MENU_TREE[$full_path]+x}" ]; then
           MENU_STACK+=("$CURRENT_PATH")
