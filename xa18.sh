@@ -89,7 +89,7 @@ draw_title() {
   printf "%b║%*s%b%s%b%*s%b║%b\n" "$C_BOX" "$left_pad" "" "$C_TITLE" "$title" "$C_RESET" "$right_pad" "" "$C_BOX" "$C_RESET"
 }
 
-# ====== 分级菜单解析（使用 || 分隔子项） ======
+# ====== 分级菜单解析 ======
 declare -A MENU_TREE
 declare -A MENU_CMD
 declare -A MENU_PARENT
@@ -107,7 +107,8 @@ for line in "${RAW_LINES[@]}"; do
     fld="${parts[i]}"
     [ -z "$fld" ] && continue
     full_path="$parent/$fld"
-    # 添加子项到字符串，用 || 分隔
+    # 初始化父菜单为空字符串（避免 unbound variable）
+    [ -z "${MENU_TREE[$parent]+x}" ] && MENU_TREE[$parent]=""
     if [ -z "${MENU_TREE[$parent]}" ]; then
       MENU_TREE["$parent"]="$fld"
     else
@@ -116,8 +117,8 @@ for line in "${RAW_LINES[@]}"; do
     MENU_PARENT["$full_path"]="$parent"
     parent="$full_path"
   done
-  # 添加叶子节点
   leaf_path="$parent/$name"
+  [ -z "${MENU_TREE[$parent]+x}" ] && MENU_TREE[$parent]=""
   if [ -z "${MENU_TREE[$parent]}" ]; then
     MENU_TREE["$parent"]="$name"
   else
