@@ -12,14 +12,11 @@ if [ "$(id -u)" -ne 0 ]; then
   fi
   echo -e "\033[1;32m🔑  请输入当前用户的密码以获取管理员权限（sudo）...\033[0m"
 
-  # 判断当前脚本是否为普通文件
   if [ -f "$0" ] && [ -r "$0" ]; then
-    # 直接重启脚本
     exec sudo -E bash "$0" "$@"
     exit $?
   fi
 
-  # 若为 /dev/fd 或 STDIN，则复制内容到临时文件
   TMP_SCRIPT="$(mktemp /tmp/menu_manager.XXXXXX.sh)"
   if [ -e "$0" ]; then
     if ! cat "$0" > "$TMP_SCRIPT" 2>/dev/null; then
@@ -33,7 +30,6 @@ if [ "$(id -u)" -ne 0 ]; then
   echo -e "\033[1;34mℹ️  已将脚本内容写入临时文件：$TMP_SCRIPT\033[0m"
   echo -e "\033[1;34m➡️  正在以 root 权限重新运行...\033[0m"
 
-  # 以 root 重新运行，并在执行完后自动删除自身
   exec sudo -E bash -c "trap 'rm -f \"$TMP_SCRIPT\"' EXIT; bash \"$TMP_SCRIPT\" \"$@\""
   exit $?
 fi
@@ -53,9 +49,7 @@ if ! curl -fsSL "$CONFIG_URL" -o "$TMP_CONF"; then
   exit 1
 fi
 
-mapfile -t ALL_LINES < <(grep -vE '^\s*#|^\s*$' "$TMP_CONF")
-TOTAL=${#ALL_LINES[@]}
-PAGES=$(( (TOTAL + PER_PAGE - 1) / PER_PAGE ))
+mapfile -t RAW_LINES < <(grep -vE '^\s*#|^\s*$' "$TMP_CONF")
 
 # ====== 色彩定义 ======
 C_RESET="\033[0m"
@@ -108,80 +102,165 @@ draw_title() {
   printf "%b║%*s%b%s%b%*s%b║%b\n" "$C_BOX" "$left_pad" "" "$C_TITLE" "$title" "$C_RESET" "$right_pad" "" "$C_BOX" "$C_RESET"
 }
 
-# ====== 绘制菜单页 ======
-print_page() {
-  local page="$1"
-  local start=$(( (page-1)*PER_PAGE ))
-  local end=$(( start+PER_PAGE-1 ))
-  ((end>=TOTAL)) && end=$((TOTAL-1))
+# ====== 分级菜单解析 ======
+declare -A MENU_TREE      # key=父路径, value=子节点数组（空格分隔）
+declare -A MENU_CMD       # key=完整路径, value=命令（仅叶子节点）
+declare -A MENU_PARENT    # key=完整路径, value=父路径
+ROOT_KEY="ROOT"
+MENU_TREE["$ROOT_KEY"]=""
+
+for line in "${RAW_LINES[@]}"; do
+  # 解析行
+  level=$(echo "$line" | awk -F'|' '{print NF-2}') # 菜单层级（减去名称和命令）
+  IFS='|' read -r -a parts <<< "$line"
+  name="${parts[0]}"
+  cmd="${parts[-1]}"
+
+  # 计算父路径
+  if (( level == 0 )); then
+    parent="$ROOT_KEY"
+  else
+    # 上一个同级或上级的路径
+    for ((i=${#parts[@]}-2; i>=0; i--)); do
+      if [ -n "${parts[i]}" ]; then
+        parent_path="${parts[i]}"
+        break
+      fi
+    done
+    parent="$parent_path"
+    [ -z "$parent" ] && parent="$ROOT_KEY"
+  fi
+
+  full_path="$parent/$name"
+  MENU_PARENT["$full_path"]="$parent"
+
+  # 添加子节点到父菜单
+  if [ -z "${MENU_TREE[$parent]+x}" ]; then
+    MENU_TREE[$parent]="$name"
+  else
+    MENU_TREE[$parent]="${MENU_TREE[$parent]} $name"
+  fi
+
+  # 如果有命令，标记为叶子节点
+  if [[ "$cmd" =~ ^(https?|CMD:|bash) ]]; then
+    MENU_CMD["$full_path"]="$cmd"
+  fi
+done
+
+# ====== 菜单栈管理 ======
+MENU_STACK=()
+CURRENT_PATH="$ROOT_KEY"
+
+# ====== 菜单渲染 ======
+render_menu() {
+  local path="$1"
+  local children="${MENU_TREE[$path]}"
+  local arr=($children)
 
   clear
   draw_line
   draw_title "脚本管理器 (by Moreanp)"
   draw_mid
 
-  for slot in $(seq 0 $((PER_PAGE-1))); do
-    idx=$((start+slot))
-    if ((idx<=end)); then
-      name="${ALL_LINES[idx]%%|*}"
-      draw_text "${C_KEY}[$slot]${C_RESET} ${C_NAME}${name}${C_RESET}"
+  for i in $(seq 0 $((PER_PAGE-1))); do
+    if (( i < ${#arr[@]} )); then
+      draw_text "${C_KEY}[$i]${C_RESET} ${C_NAME}${arr[i]}${C_RESET}"
     else
       draw_text ""
     fi
   done
 
   draw_mid
-  draw_text "第 $page/$PAGES 页   共 $TOTAL 项"
-  draw_text "[ n ] 下一页   [ b ] 上一页"
-  draw_text "[ q ] 退出     [ 0-9 ] 选择"
+  draw_text "第 1/1 页   共 ${#arr[@]} 项"
+  draw_text "[ p ] 返回上一级   [ q ] 退出"
+  draw_text "[ 输入关键字直接搜索叶子节点 ]"
   draw_bot
 }
 
-# ====== 执行选项 ======
-run_slot() {
-  local page="$1" slot="$2"
-  local start=$(( (page-1)*PER_PAGE ))
-  local idx=$((start+slot))
-  if (( idx<0 || idx>=TOTAL )); then
-    echo "❌ 无效选项"
-    read -rp "按回车返回..." _
-    return
-  fi
-
-  selected="${ALL_LINES[idx]}"
-  name="${selected%%|*}"
-  rest="${selected#*|}"
-  cmd="${rest%%|*}"
-  args=""
-  [[ "$rest" == *"|"* ]] && args="${rest#*|}"
+# ====== 运行叶子节点命令 ======
+run_leaf() {
+  local full_path="$1"
+  local cmd="${MENU_CMD[$full_path]}"
 
   clear
-  echo -e "${C_KEY}👉 正在执行：${C_NAME}${name}${C_RESET}"
+  echo -e "${C_KEY}👉 正在执行：${C_NAME}${full_path##*/}${C_RESET}"
   echo -e "${C_DIV}-----------------------------------------${C_RESET}"
 
   if [[ "$cmd" =~ ^CMD: ]]; then
-    eval "${cmd#CMD:} ${args}"
+    eval "${cmd#CMD:}"
   elif [[ "$cmd" =~ ^https?:// ]]; then
-    bash <(curl -fsSL "${cmd}") ${args:+$args}
+    bash <(curl -fsSL "$cmd")
   else
-    eval "$cmd ${args}"
+    eval "$cmd"
   fi
 
   echo -e "${C_DIV}-----------------------------------------${C_RESET}"
   read -rp $'按回车返回菜单...' _
 }
 
+# ====== 全局模糊搜索 ======
+search_leaf() {
+  local keyword="$1"
+  keyword=$(echo "$keyword" | tr '[:upper:]' '[:lower:]')
+  local results=()
+  for key in "${!MENU_CMD[@]}"; do
+    local name="${key##*/}"
+    name_lower=$(echo "$name" | tr '[:upper:]' '[:lower:]')
+    if [[ "$name_lower" == *"$keyword"* ]]; then
+      results+=("$key")
+    fi
+  done
+
+  if [ ${#results[@]} -eq 0 ]; then
+    echo "⚠️ 未找到匹配项"
+    read -rp "按回车返回菜单..." _
+    return
+  fi
+
+  clear
+  draw_line
+  draw_title "搜索结果"
+  draw_mid
+
+  for i in "${!results[@]}"; do
+    draw_text "${C_KEY}[$i]${C_RESET} ${C_NAME}${results[i]##*/}${C_RESET}"
+  done
+
+  draw_bot
+  read -rp "选择执行: " idx
+  [[ "$idx" =~ ^[0-9]+$ ]] && [[ "$idx" -lt ${#results[@]} ]] && run_leaf "${results[idx]}"
+}
+
 # ====== 主循环 ======
-page=1
 while true; do
-  print_page "$page"
-  printf "%b请输入选项 (0-9 / n / b / q): %b" "$C_HINT" "$C_RESET"
-  read -r key || true
-  case "$key" in
-    [0-9]) run_slot "$page" "$key" ;;
-    n|N) ((page<PAGES)) && ((page++)) || { echo "已是最后一页"; read -rp "按回车返回..." _; } ;;
-    b|B) ((page>1)) && ((page--)) || { echo "已是第一页"; read -rp "按回车返回..." _; } ;;
+  render_menu "$CURRENT_PATH"
+  read -rp "请输入选项或关键字: " input
+  case "$input" in
     q|Q) clear; echo "👋 再见！"; exit 0 ;;
-    *) echo "⚠️ 无效输入，请重试"; sleep 0.6 ;;
+    p|P)
+      if [ "${#MENU_STACK[@]}" -gt 0 ]; then
+        CURRENT_PATH="${MENU_STACK[-1]}"
+        unset 'MENU_STACK[-1]'
+      fi
+      ;;
+    [0-9]*)
+      children=(${MENU_TREE[$CURRENT_PATH]})
+      if (( input < ${#children[@]} )); then
+        selected="${children[input]}"
+        full_path="$CURRENT_PATH/$selected"
+        if [ -n "${MENU_CMD[$full_path]+x}" ]; then
+          run_leaf "$full_path"
+        elif [ -n "${MENU_TREE[$full_path]+x}" ]; then
+          MENU_STACK+=("$CURRENT_PATH")
+          CURRENT_PATH="$full_path"
+        else
+          echo "⚠️ 无效选项"; sleep 0.6
+        fi
+      fi
+      ;;
+    *)
+      # 输入非数字，执行模糊搜索
+      search_leaf "$input"
+      ;;
   esac
 done
