@@ -95,7 +95,7 @@ declare -A MENU_CMD
 declare -A MENU_PARENT
 declare -A LEAF_FLAG
 ROOT_KEY="ROOT"
-MENU_TREE["$ROOT_KEY"]=""
+MENU_TREE["$ROOT_KEY"]=()
 
 for line in "${RAW_LINES[@]}"; do
   IFS='|' read -ra parts <<< "$line"
@@ -106,23 +106,21 @@ for line in "${RAW_LINES[@]}"; do
   cmd="${parts[-1]}"
 
   parent="$ROOT_KEY"
-  full_name=""
   for ((i=1;i<parts_len-1;i++)); do
     fld="${parts[i]}"
     [ -z "$fld" ] && continue
     full_path="$parent/$fld"
-    [ -z "${MENU_TREE[$parent]+x}" ] && MENU_TREE["$parent"]=""
-    # 保留完整显示路径
-    MENU_TREE["$parent"]="${MENU_TREE["$parent"]} $fld"
+    if [ -z "${MENU_TREE[$parent]+x}" ]; then MENU_TREE["$parent"]=(); fi
+    # 用数组追加，避免空格拆分
+    MENU_TREE["$parent"]+=("$fld")
     MENU_PARENT["$full_path"]="$parent"
     parent="$full_path"
-    full_name="$fld"
   done
 
   # 添加叶子节点
   leaf_path="$parent/$name"
-  [ -z "${MENU_TREE[$parent]+x}" ] && MENU_TREE["$parent"]=""
-  MENU_TREE["$parent"]="${MENU_TREE["$parent"]} $name"
+  if [ -z "${MENU_TREE[$parent]+x}" ]; then MENU_TREE["$parent"]=(); fi
+  MENU_TREE["$parent"]+=("$name")
   MENU_PARENT["$leaf_path"]="$parent"
   if [ -n "$cmd" ]; then
     MENU_CMD["$leaf_path"]="$cmd"
@@ -137,15 +135,14 @@ CURRENT_PATH="$ROOT_KEY"
 # ====== 渲染菜单 ======
 render_menu() {
   local path="$1"
-  local children=(${MENU_TREE[$path]})
+  local children=("${MENU_TREE[$path][@]}")
   clear
   draw_line
   draw_title "脚本管理器 (by Moreanp)"
   draw_mid
   for i in $(seq 0 $((PER_PAGE-1))); do
     if (( i < ${#children[@]} )); then
-      local display_name="$children[i]"
-      # 显示完整路径给用户
+      local display_name="${children[i]}"
       local full_path="$path/$display_name"
       if [ "$path" != "$ROOT_KEY" ]; then
         display_name=$(echo "$full_path" | sed "s|$ROOT_KEY/||g" | tr '/' ' > ')
@@ -226,7 +223,7 @@ while true; do
       fi
       ;;
     [0-9]*)
-      children=(${MENU_TREE[$CURRENT_PATH]})
+      children=("${MENU_TREE[$CURRENT_PATH][@]}")
       if (( input < ${#children[@]} )); then
         selected="${children[input]}"
         full_path="$CURRENT_PATH/$selected"
