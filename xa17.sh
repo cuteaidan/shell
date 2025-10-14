@@ -89,38 +89,40 @@ draw_title() {
   printf "%b║%*s%b%s%b%*s%b║%b\n" "$C_BOX" "$left_pad" "" "$C_TITLE" "$title" "$C_RESET" "$right_pad" "" "$C_BOX" "$C_RESET"
 }
 
-# ====== 分级菜单解析 ======
+# ====== 分级菜单解析（使用 || 分隔子项） ======
 declare -A MENU_TREE
 declare -A MENU_CMD
 declare -A MENU_PARENT
 declare -A LEAF_FLAG
 ROOT_KEY="ROOT"
-MENU_TREE["$ROOT_KEY"]=()
+MENU_TREE["$ROOT_KEY"]=""
 
 for line in "${RAW_LINES[@]}"; do
   IFS='|' read -ra parts <<< "$line"
-  parts_len=${#parts[@]}
-  [ $parts_len -lt 2 ] && continue
-
+  [ ${#parts[@]} -lt 2 ] && continue
   name="${parts[0]}"
   cmd="${parts[-1]}"
-
   parent="$ROOT_KEY"
-  for ((i=1;i<parts_len-1;i++)); do
+  for ((i=1;i<${#parts[@]}-1;i++)); do
     fld="${parts[i]}"
     [ -z "$fld" ] && continue
     full_path="$parent/$fld"
-    if [ -z "${MENU_TREE[$parent]+x}" ]; then MENU_TREE["$parent"]=(); fi
-    # 用数组追加，避免空格拆分
-    MENU_TREE["$parent"]+=("$fld")
+    # 添加子项到字符串，用 || 分隔
+    if [ -z "${MENU_TREE[$parent]}" ]; then
+      MENU_TREE["$parent"]="$fld"
+    else
+      MENU_TREE["$parent"]="${MENU_TREE[$parent]}||$fld"
+    fi
     MENU_PARENT["$full_path"]="$parent"
     parent="$full_path"
   done
-
   # 添加叶子节点
   leaf_path="$parent/$name"
-  if [ -z "${MENU_TREE[$parent]+x}" ]; then MENU_TREE["$parent"]=(); fi
-  MENU_TREE["$parent"]+=("$name")
+  if [ -z "${MENU_TREE[$parent]}" ]; then
+    MENU_TREE["$parent"]="$name"
+  else
+    MENU_TREE["$parent"]="${MENU_TREE[$parent]}||$name"
+  fi
   MENU_PARENT["$leaf_path"]="$parent"
   if [ -n "$cmd" ]; then
     MENU_CMD["$leaf_path"]="$cmd"
@@ -135,7 +137,8 @@ CURRENT_PATH="$ROOT_KEY"
 # ====== 渲染菜单 ======
 render_menu() {
   local path="$1"
-  local children=("${MENU_TREE[$path][@]}")
+  local IFS='||'
+  read -ra children <<< "${MENU_TREE[$path]}"
   clear
   draw_line
   draw_title "脚本管理器 (by Moreanp)"
@@ -177,25 +180,22 @@ run_leaf() {
   read -rp $'按回车返回菜单...' _
 }
 
-# ====== 全局模糊搜索 ======
+# ====== 搜索叶子节点 ======
 search_leaf() {
   local keyword="$1"
   keyword=$(echo "$keyword" | tr '[:upper:]' '[:lower:]')
   local results=()
   for key in "${!LEAF_FLAG[@]}"; do
     local name="${key##*/}"
-    name_lower=$(echo "$name" | tr '[:upper:]' '[:lower:]')
-    if [[ "$name_lower" == *"$keyword"* ]]; then
+    if [[ $(echo "$name" | tr '[:upper:]' '[:lower:]') == *"$keyword"* ]]; then
       results+=("$key")
     fi
   done
-
   if [ ${#results[@]} -eq 0 ]; then
     echo "⚠️ 未找到匹配项"
     read -rp "按回车返回菜单..." _
     return
   fi
-
   clear
   draw_line
   draw_title "搜索结果"
@@ -223,7 +223,7 @@ while true; do
       fi
       ;;
     [0-9]*)
-      children=("${MENU_TREE[$CURRENT_PATH][@]}")
+      IFS='||' read -ra children <<< "${MENU_TREE[$CURRENT_PATH]}"
       if (( input < ${#children[@]} )); then
         selected="${children[input]}"
         full_path="$CURRENT_PATH/$selected"
