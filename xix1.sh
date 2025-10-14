@@ -11,7 +11,6 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
   fi
   echo -e "\033[1;32m🔑  请输入当前用户的密码以获取管理员权限（sudo）...\033[0m"
-
   TMP_SCRIPT="$(mktemp /tmp/menu_manager.XXXXXX.sh)"
   cat > "$TMP_SCRIPT"
   chmod +x "$TMP_SCRIPT"
@@ -118,24 +117,13 @@ for line in "${ALL_LINES[@]}"; do
   # 保存命令
   CMD_MAP["$parent_key::$leaf"]="$cmd_field"
   # 保存 CHILDREN
-  CHILDREN["$parent_key"]="${CHILDREN["$parent_key"]}${leaf}${SEP}"
-done
-
-# 顶级菜单显示所有叶子节点和一级菜单
-top_level_keys=()
-for key in "${!CHILDREN[@]}"; do
-  if [[ "$key" == "ROOT" ]]; then
-    IFS=$'\x1f' read -r -a arr <<< "${CHILDREN[$key]}"
-    for name in "${arr[@]}"; do
-      top_level_keys+=("$name")
-    done
-  fi
+  CHILDREN["$parent_key"]="${CHILDREN["$parent_key"]:-}${leaf}${SEP}"
 done
 
 # ====== 获取 CHILDREN 数组 ======
 _get_children_array() {
   local key="$1"
-  local raw="${CHILDREN[$key]:-}"
+  local raw="${CHILDREN["$key"]:-}"
   IFS=$'\x1f' read -r -a arr <<< "$raw"
   local out=()
   for e in "${arr[@]}"; do [ -n "$e" ] && out+=("$e"); done
@@ -148,7 +136,7 @@ print_page_view() {
   shift
   local -a items=("$@")
   local total=${#items[@]}
-  local pages=$(( (total + PER_PAGE -1)/PER_PAGE ))
+  local pages=$(( (total + PER_PAGE-1)/PER_PAGE ))
   [ $pages -lt 1 ] && pages=1
   local start=$(( (page-1)*PER_PAGE ))
   local end=$(( start+PER_PAGE-1 ))
@@ -243,4 +231,33 @@ while true; do
   VIEW_PAGES=$(( (VIEW_TOTAL + PER_PAGE-1)/PER_PAGE ))
   [ $VIEW_PAGES -lt 1 ] && VIEW_PAGES=1
   print_page_view "$page" "${view_items[@]}"
-  printf "%b请输入选项 (0-9/n/b/p/q/搜索): %b" "$C_HINT_
+  printf "%b请输入选项 (0-9/n/b/p/q/搜索): %b" "$C_HINT" "$C_RESET"
+  read -r key
+  key="$(echo -n "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  case "$key" in
+    [0-9])
+      idx=$(( (page-1)*PER_PAGE + key ))
+      if (( idx<0 || idx>=VIEW_TOTAL )); then echo "❌ 无效选项"; read -rp "按回车返回..." _; continue; fi
+      sel_name="${view_items[$idx]}"
+      run_selected "$current_parent" "$sel_name"
+      rc=$?
+      if [ "$rc" -eq 2 ]; then
+        if [ "$current_parent" == "ROOT" ]; then new_parent="$sel_name"; else new_parent="$current_parent::$sel_name"; fi
+        if [ -n "${CHILDREN["$new_parent"]:-}" ]; then current_parent="$new_parent"; page=1
+        else echo "⚠️ 当前项无下级也无可执行命令"; read -rp "按回车返回..." _; fi
+      fi
+      ;;
+    n|N) ((page<VIEW_PAGES)) && ((page++)) || { echo "已是最后一页"; read -rp "按回车返回..." _; } ;;
+    b|B)
+      if [ "$current_parent" != "ROOT" ]; then
+        if [[ "$current_parent" == *"::"* ]]; then current_parent="${current_parent%::*}"; else current_parent="ROOT"; fi
+        page=1
+      else echo "已是主菜单"; read -rp "按回车返回..." _; fi
+      ;;
+    p|P) current_parent="ROOT"; page=1 ;;
+    q|Q) clear; echo "👋 再见！"; exit 0 ;;
+    *)
+      search_and_show "$key"
+      ;;
+  esac
+done
