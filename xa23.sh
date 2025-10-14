@@ -31,7 +31,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # ====== 配置部分 ======
-CONFIG_URL="https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/scripts.conf"
+CONFIG_URL="https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/script1.conf"
 PER_PAGE=10
 BOX_WIDTH=60
 LEFT_INDENT="  "
@@ -100,14 +100,19 @@ add_child() {
   local parent="$1"
   local child="$2"
   local child_label="$3"
-  local existing="${CHILDREN["$parent"]:-}"
-  if [ -z "$existing" ]; then
-    CHILDREN["$parent"]="$child"
-  else
-    if ! printf '%s\n' "$existing" | grep -Fxq "$child"; then
-      CHILDREN["$parent"]="${existing}"$'\n'"${child}"
+
+  # 只在 parent 非空时添加 CHILDREN
+  if [ -n "$parent" ]; then
+    local existing="${CHILDREN["$parent"]:-}"
+    if [ -z "$existing" ]; then
+      CHILDREN["$parent"]="$child"
+    else
+      if ! printf '%s\n' "$existing" | grep -Fxq "$child"; then
+        CHILDREN["$parent"]="${existing}"$'\n'"${child}"
+      fi
     fi
   fi
+
   LABEL["$child"]="$child_label"
   if ! printf '%s\n' "${ORDERED_KEYS[@]-}" | grep -Fxq "$child"; then
     ORDERED_KEYS+=("$child")
@@ -119,16 +124,14 @@ join_slash() {
   echo "$*"
 }
 
-# ====== 解析配置文件，构建树 ======
+# ====== 解析配置文件 ======
 while IFS= read -r line || [ -n "$line" ]; do
   [[ "$line" =~ ^\s*# ]] && continue
   [[ -z "${line// }" ]] && continue
 
   IFS='|' read -r -a parts <<< "$line"
   local_len=${#parts[@]}
-  if (( local_len < 2 )); then
-    continue
-  fi
+  if (( local_len < 2 )); then continue; fi
 
   name="${parts[local_len-2]}"
   cmd="${parts[local_len-1]}"
@@ -149,18 +152,20 @@ while IFS= read -r line || [ -n "$line" ]; do
     parent="$(join_slash "${path_segments[@]}")"
   fi
 
+  if [ -n "$parent" ]; then
+    if [ -z "${LABEL["$parent"]:-}" ]; then
+      parent_label="${parent##*/}"
+      LABEL["$parent"]="$parent_label"
+      if ! printf '%s\n' "${ORDERED_KEYS[@]-}" | grep -Fxq "$parent"; then
+        ORDERED_KEYS+=("$parent")
+      fi
+    fi
+  fi
+
   if [ -z "$parent" ]; then
     child="$name"
   else
     child="$parent/$name"
-  fi
-
-  if [ -z "${LABEL["$parent"]:-}" ] && [ -n "$parent" ]; then
-    parent_label="${parent##*/}"
-    LABEL["$parent"]="$parent_label"
-    if ! printf '%s\n' "${ORDERED_KEYS[@]-}" | grep -Fxq "$parent"; then
-      ORDERED_KEYS+=("$parent")
-    fi
   fi
 
   add_child "$parent" "$child" "$name"
@@ -266,11 +271,11 @@ search_mode() {
     local LCASE_PATTERN="$(printf '%s' "$pattern" | tr '[:upper:]' '[:lower:]')"
     for i in "${!leaf_keys[@]}"; do
       k="${leaf_keys[i]}"
-      disp="${leaf_disp[i]}"
+      disp="${LABEL["$k"]}"
       low_disp="$(printf '%s' "$disp" | tr '[:upper:]' '[:lower:]')"
       if [[ "$low_disp" == *"$LCASE_PATTERN"* ]]; then
         results_keys+=("$k")
-        results_disp+=("${LABEL["$k"]}")
+        results_disp+=("$disp")
       fi
     done
 
