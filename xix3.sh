@@ -3,7 +3,7 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-# ====== 自动提权 ======
+# ====== 自动提权（兼容 bash <(curl …) / curl | bash / 本地文件） ======
 if [ "$(id -u)" -ne 0 ]; then
   echo -e "\033[1;33m⚠️  检测到当前用户不是 root。\033[0m"
   if ! command -v sudo >/dev/null 2>&1; then
@@ -15,6 +15,9 @@ if [ "$(id -u)" -ne 0 ]; then
   TMP_SCRIPT="$(mktemp /tmp/menu_manager.XXXXXX.sh)"
   cat > "$TMP_SCRIPT"
   chmod +x "$TMP_SCRIPT"
+
+  echo -e "\033[1;34mℹ️  已将脚本内容写入临时文件：$TMP_SCRIPT\033[0m"
+  echo -e "\033[1;34m➡️  正在以 root 权限重新运行...\033[0m"
 
   exec sudo -E bash -c "trap 'rm -f \"$TMP_SCRIPT\"' EXIT; bash \"$TMP_SCRIPT\" \"$@\""
   exit $?
@@ -45,7 +48,7 @@ C_NAME="\033[1;38;5;39m"
 C_HINT="\033[1;32m"
 C_DIV="\033[38;5;240m"
 
-# ====== 字符宽度计算（全角支持） ======
+# ====== 字符宽度计算（支持全角字符） ======
 str_width() {
   local text="$1"
   text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
@@ -87,9 +90,9 @@ draw_title() {
   printf "%b║%*s%b%s%b%*s%b║%b\n" "$C_BOX" "$left_pad" "" "$C_TITLE" "$title" "$C_RESET" "$right_pad" "" "$C_BOX" "$C_RESET"
 }
 
-# ====== 解析配置构建菜单树 ======
-declare -A CMD_MAP      # parent::name -> command
-declare -A CHILDREN     # parent -> 子项，用 \x1f 分隔
+# ====== 构建菜单树 ======
+declare -A CMD_MAP        # key="完整路径" -> 命令
+declare -A CHILDREN       # key="父路径" -> 子菜单/叶子，用 \x1f 分隔
 SEP=$'\x1f'
 
 _join_path() {
@@ -103,42 +106,63 @@ _join_path() {
 
 for line in "${ALL_LINES[@]}"; do
   IFS='|' read -r -a parts <<< "$line"
-  parts_len=${#parts[@]}
-  [ $parts_len -lt 2 ] && continue
-  cmd_field="${parts[parts_len-1]}"
-  path_components=()
-  for ((i=0;i<parts_len-1;i++)); do
-    part="$(echo -n "${parts[i]}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-    [ -n "$part" ] && path_components+=("$part")
+  # 去掉空格
+  for i in "${!parts[@]}"; do
+    parts[$i]="$(echo -n "${parts[$i]}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
   done
-  [ ${#path_components[@]} -eq 0 ] && continue
-  leaf="${path_components[-1]}"
-  parent_arr=("${path_components[@]:0:${#path_components[@]}-1}")
-  parent_key="${#parent_arr[@]}" && [ "${#parent_arr[@]}" -gt 0 ] && parent_key="$(_join_path parent_arr)" || parent_key="ROOT"
+  # 过滤空行
+  [[ "${#parts[@]}" -lt 2 ]] && continue
+  # 找到最后一个非空字段作为命令
+  cmd=""
+  for ((i=${#parts[@]}-1;i>=0;i--)); do
+    [[ -n "${parts[i]}" ]] && { cmd="${parts[i]}"; parts=("${parts[@]:0:i}"); break; }
+  done
+  # 父路径
+  path=()
+  for p in "${parts[@]}"; do
+    [[ -n "$p" ]] && path+=("$p")
+  done
+  if [ ${#path[@]} -eq 0 ]; then
+    path=("ROOT")
+  fi
+  leaf="${path[-1]}"
+  parent=()
+  if [ ${#path[@]} -gt 1 ]; then
+    parent=("${path[@]:0:${#path[@]}-1}")
+    parent_key="$(_join_path parent)"
+  else
+    parent_key="ROOT"
+  fi
+  full_key="$(_join_path path)"
+  CMD_MAP["$full_key"]="$cmd"
 
-  # 注册子项
-  CHILDREN[$parent_key]="${CHILDREN[$parent_key]:-}${leaf}${SEP}"
-  CMD_MAP["$parent_key::$leaf"]="$cmd_field"
+  # 添加到父子列表
+  current="${CHILDREN[$parent_key]:-}"
+  if [[ -z "$current" ]]; then
+    CHILDREN[$parent_key]="${leaf}${SEP}"
+  elif [[ "$current" != *"${leaf}${SEP}"* ]]; then
+    CHILDREN[$parent_key]="${current}${leaf}${SEP}"
+  fi
 done
 
-# ====== 获取菜单子项数组 ======
+# ====== 获取子项数组 ======
 _get_children_array() {
   local key="$1"
-  local -a out=()
+  local -a arr=()
   local raw="${CHILDREN[$key]:-}"
-  [ -z "$raw" ] && return
+  [[ -z "$raw" ]] && echo && return
   IFS=$'\x1f' read -r -a temp <<< "$raw"
-  for v in "${temp[@]}"; do [ -n "$v" ] && out+=("$v"); done
-  echo "${out[@]}"
+  for v in "${temp[@]}"; do [[ -n "$v" ]] && arr+=("$v"); done
+  printf '%s\n' "${arr[@]}"
 }
 
-# ====== 打印菜单 ======
+# ====== 打印页面 ======
 print_page_view() {
   local page="$1"
   shift
   local -a items=("$@")
   local total=${#items[@]}
-  local pages=$(( (total + PER_PAGE - 1)/PER_PAGE ))
+  local pages=$(( (total + PER_PAGE -1)/PER_PAGE ))
   [ $pages -lt 1 ] && pages=1
   local start=$(( (page-1)*PER_PAGE ))
   local end=$(( start+PER_PAGE-1 ))
@@ -148,14 +172,17 @@ print_page_view() {
   draw_line
   draw_title "脚本管理器 (by Moreanp)"
   draw_mid
+
   for slot in $(seq 0 $((PER_PAGE-1))); do
     idx=$((start+slot))
     if ((idx<=end)); then
-      draw_text "${C_KEY}[$slot]${C_RESET} ${C_NAME}${items[idx]}${C_RESET}"
+      name="${items[idx]}"
+      draw_text "${C_KEY}[$slot]${C_RESET} ${C_NAME}${name}${C_RESET}"
     else
       draw_text ""
     fi
   done
+
   draw_mid
   draw_text "第 $page/$pages 页   共 $total 项"
   draw_text "[ n ] 下一页   [ b ] 上一页"
@@ -165,15 +192,21 @@ print_page_view() {
 
 # ====== 执行命令 ======
 run_selected() {
-  local parent="$1" name="$2"
-  local cmd="${CMD_MAP[$parent::$name]:-}"
-  [ -z "$cmd" ] && return 2
+  local parent_key="$1"
+  local sel="$2"
+  local full_key="$parent_key"
+  [[ "$parent_key" == "ROOT" ]] && full_key="$sel" || full_key="$parent_key::$sel"
+  local cmd="${CMD_MAP[$full_key]:-}"
+  if [[ -z "$cmd" ]]; then
+    # 进入子菜单
+    current_parent="$full_key"
+    page=1
+    return 2
+  fi
   clear
-  echo -e "${C_KEY}👉 正在执行：${C_NAME}${name}${C_RESET}"
+  echo -e "${C_KEY}👉 正在执行：${C_NAME}${sel}${C_RESET}"
   echo -e "${C_DIV}-----------------------------------------${C_RESET}"
-  if [[ "$cmd" =~ ^CMD: ]]; then
-    eval "${cmd#CMD:}"
-  elif [[ "$cmd" =~ ^https?:// ]]; then
+  if [[ "$cmd" =~ ^https?:// ]]; then
     bash <(curl -fsSL "$cmd")
   else
     eval "$cmd"
@@ -186,19 +219,19 @@ run_selected() {
 # ====== 搜索功能 ======
 search_and_show() {
   local keyword="$1"
-  [ -z "$keyword" ] && return 1
+  [[ -z "$keyword" ]] && return 1
   kw_lc="$(echo "$keyword" | tr '[:upper:]' '[:lower:]')"
   local -a matches=()
-  for k in "${!CMD_MAP[@]}"; do
-    name="${k##*::}"
-    lc_name="$(echo "$name" | tr '[:upper:]' '[:lower:]')"
-    if [[ "$lc_name" == *"$kw_lc"* ]]; then
-      matches+=("$name|$k|${CMD_MAP[$k]}")
+  for key in "${!CMD_MAP[@]}"; do
+    name="${key##*::}"
+    name_lc="$(echo "$name" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$name_lc" == *"$kw_lc"* ]]; then
+      matches+=("$key")
     fi
   done
   if [ ${#matches[@]} -eq 0 ]; then
-    echo "❌ 未找到匹配项，输入 p 返回全部列表。"
-    read -rp "输入: " ans || true
+    echo "❌ 未找到匹配项，输入 p 返回全部菜单"
+    read -rp "输入: " ans
     [[ "$ans" == "p" ]] && return 2
     return 1
   fi
@@ -207,33 +240,31 @@ search_and_show() {
   while true; do
     local -a disp=()
     for m in "${matches[@]}"; do
-      disp+=("${m%%|*}")
+      disp+=("${m##*::}")
     done
     print_page_view "$page" "${disp[@]}"
-    printf "%b请输入编号 (0-9) 执行， p 返回全部列表, q 退出: %b" "$C_HINT" "$C_RESET"
-    read -r in || true
+    printf "%b请输入编号 (0-9) 执行, p 返回菜单, q 退出: %b" "$C_HINT" "$C_RESET"
+    read -r in
     case "$in" in
+      [0-9])
+        idx=$(( (page-1)*PER_PAGE + in ))
+        [[ $idx -ge ${#matches[@]} ]] && { echo "❌ 无效编号"; read -rp "按回车继续..." _; continue; }
+        sel="${matches[$idx]}"
+        cmd="${CMD_MAP[$sel]}"
+        clear
+        echo -e "${C_KEY}👉 正在执行：${C_NAME}${sel##*::}${C_RESET}"
+        echo -e "${C_DIV}-----------------------------------------${C_RESET}"
+        if [[ "$cmd" =~ ^https?:// ]]; then
+          bash <(curl -fsSL "$cmd")
+        else
+          eval "$cmd"
+        fi
+        echo -e "${C_DIV}-----------------------------------------${C_RESET}"
+        read -rp $'按回车返回搜索结果...' _
+        ;;
       p|P) return 2 ;;
       q|Q) clear; echo "👋 再见！"; exit 0 ;;
-      [0-9]*)
-        idx=$(( (page-1)*PER_PAGE + in ))
-        if (( idx >= 0 && idx < ${#matches[@]} )); then
-          sel="${matches[$idx]}"
-          sel_name="${sel%%|*}"
-          sel_cmd="${sel##*|}"
-          clear
-          echo -e "${C_KEY}👉 正在执行：${C_NAME}${sel_name}${C_RESET}"
-          echo -e "${C_DIV}-----------------------------------------${C_RESET}"
-          if [[ "$sel_cmd" =~ ^CMD: ]]; then eval "${sel_cmd#CMD:}"; 
-          elif [[ "$sel_cmd" =~ ^https?:// ]]; then bash <(curl -fsSL "$sel_cmd"); 
-          else eval "$sel_cmd"; fi
-          echo -e "${C_DIV}-----------------------------------------${C_RESET}"
-          read -rp $'按回车返回搜索结果...' _
-        else
-          echo "❌ 无效编号"; sleep 0.5
-        fi
-        ;;
-      n|N) ((page++)); maxp=$(( (${#matches[@]}+PER_PAGE-1)/PER_PAGE )); ((page>maxp)) && page=$maxp ;;
+      n|N) ((page++)); maxp=$(( (${#matches[@]} + PER_PAGE -1)/PER_PAGE )); ((page>maxp)) && page=$maxp ;;
       b|B) ((page--)); ((page<1)) && page=1 ;;
       *) echo "⚠️ 无效输入"; sleep 0.5 ;;
     esac
@@ -243,52 +274,41 @@ search_and_show() {
 # ====== 主循环 ======
 current_parent="ROOT"
 page=1
-
 while true; do
-  # 展开叶子节点及一级菜单
-  view_items=()
-  for item in $(_get_children_array "$current_parent"); do
-    key="$current_parent::$item"
-    if [ -n "${CHILDREN[$key]:-}" ]; then
-      # 有子菜单，只显示父菜单名称
-      view_items+=("$item")
-    else
-      # 叶子节点
-      view_items+=("$item")
-    fi
-  done
-
+  IFS=$'\n' read -r -d '' -a view_items < <(_get_children_array "$current_parent" && printf '\0')
   VIEW_TOTAL=${#view_items[@]}
-  VIEW_PAGES=$(( (VIEW_TOTAL+PER_PAGE-1)/PER_PAGE ))
+  VIEW_PAGES=$(( (VIEW_TOTAL + PER_PAGE -1)/PER_PAGE ))
   [ $VIEW_PAGES -lt 1 ] && VIEW_PAGES=1
+
   print_page_view "$page" "${view_items[@]}"
 
   printf "%b请输入选项 (0-9/n/b/p/q/搜索): %b" "$C_HINT" "$C_RESET"
-  read -r key || true
+  read -r key
   key="$(echo -n "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
 
   case "$key" in
     [0-9])
       idx=$(( (page-1)*PER_PAGE + key ))
-      if (( idx>=0 && idx<VIEW_TOTAL )); then
-        sel="${view_items[$idx]}"
-        run_selected "$current_parent" "$sel"
-        rc=$?
-        if [ "$rc" -eq 2 ]; then
-          # 进入子菜单
-          current_parent="$current_parent::$sel"
-          page=1
-        fi
-      else
+      if (( idx<0 || idx>=VIEW_TOTAL )); then
         echo "❌ 无效选项"; read -rp "按回车返回..." _
+        continue
+      fi
+      sel="${view_items[$idx]}"
+      run_selected "$current_parent" "$sel"
+      rc=$?
+      if [ $rc -eq 2 ]; then
+        continue
       fi
       ;;
-    n|N) ((page++)); ((page>VIEW_PAGES)) && page=$VIEW_PAGES ;;
-    b|B) 
+    n|N)
+      ((page++)); ((page>VIEW_PAGES)) && page=$VIEW_PAGES ;;
+    b|B)
       if [[ "$current_parent" == "ROOT" ]]; then
         echo "已是主菜单"; read -rp "按回车返回..." _
       else
-        current_parent="${current_parent%::*}"; [ -z "$current_parent" ] && current_parent="ROOT"
+        parent="${current_parent%::*}"
+        [[ "$parent" == "$current_parent" ]] && parent="ROOT"
+        current_parent="$parent"
         page=1
       fi
       ;;
@@ -296,8 +316,14 @@ while true; do
       current_parent="ROOT"
       page=1
       ;;
-    q|Q) clear; echo "👋 再见！"; exit 0 ;;
-    "") ;;
-    *) search_and_show "$key" ;;
+    q|Q)
+      clear; echo "👋 再见！"; exit 0 ;;
+    "")
+      ;;
+    *)
+      search_and_show "$key"
+      rc=$?
+      [[ $rc -eq 2 ]] && { current_parent="ROOT"; page=1; }
+      ;;
   esac
 done
