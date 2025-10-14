@@ -98,7 +98,7 @@ ROOT_KEY="ROOT"
 MENU_TREE["$ROOT_KEY"]=""
 
 for line in "${RAW_LINES[@]}"; do
-  IFS='|' read -r -a parts <<< "$line"
+  IFS='|' read -ra parts <<< "$line"
   parts_len=${#parts[@]}
   [ $parts_len -lt 2 ] && continue
 
@@ -106,14 +106,17 @@ for line in "${RAW_LINES[@]}"; do
   cmd="${parts[-1]}"
 
   parent="$ROOT_KEY"
+  full_name=""
   for ((i=1;i<parts_len-1;i++)); do
     fld="${parts[i]}"
     [ -z "$fld" ] && continue
     full_path="$parent/$fld"
     [ -z "${MENU_TREE[$parent]+x}" ] && MENU_TREE["$parent"]=""
+    # 保留完整显示路径
     MENU_TREE["$parent"]="${MENU_TREE["$parent"]} $fld"
     MENU_PARENT["$full_path"]="$parent"
     parent="$full_path"
+    full_name="$fld"
   done
 
   # 添加叶子节点
@@ -141,7 +144,13 @@ render_menu() {
   draw_mid
   for i in $(seq 0 $((PER_PAGE-1))); do
     if (( i < ${#children[@]} )); then
-      draw_text "${C_KEY}[$i]${C_RESET} ${C_NAME}${children[i]}${C_RESET}"
+      local display_name="$children[i]"
+      # 显示完整路径给用户
+      local full_path="$path/$display_name"
+      if [ "$path" != "$ROOT_KEY" ]; then
+        display_name=$(echo "$full_path" | sed "s|$ROOT_KEY/||g" | tr '/' ' > ')
+      fi
+      draw_text "${C_KEY}[$i]${C_RESET} ${C_NAME}${display_name}${C_RESET}"
     else
       draw_text ""
     fi
@@ -195,7 +204,9 @@ search_leaf() {
   draw_title "搜索结果"
   draw_mid
   for i in "${!results[@]}"; do
-    draw_text "${C_KEY}[$i]${C_RESET} ${C_NAME}${results[i]##*/}${C_RESET}"
+    local display_name="${results[i]}"
+    display_name=$(echo "$display_name" | sed "s|$ROOT_KEY/||g" | tr '/' ' > ')
+    draw_text "${C_KEY}[$i]${C_RESET} ${C_NAME}${display_name}${C_RESET}"
   done
   draw_bot
   read -rp "选择执行: " idx
