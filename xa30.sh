@@ -167,12 +167,13 @@ run_slot() {
   read -rp $'按回车返回菜单...' _
 }
 
-# ====== 全局搜索 ======
+# ====== 全局搜索（仅匹配标题字段） ======
 search_lines() {
   local keyword="$1"
   DISPLAY_LINES=()
   for line in "${ALL_LINES[@]}"; do
-    if [[ "${line,,}" == *"${keyword,,}"* ]]; then
+    name="${line%%|*}"  # 只取标题
+    if [[ "${name,,}" == *"${keyword,,}"* ]]; then
       DISPLAY_LINES+=("$line")
     fi
   done
