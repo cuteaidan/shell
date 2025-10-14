@@ -89,7 +89,7 @@ draw_title() {
   printf "%b║%*s%b%s%b%*s%b║%b\n" "$C_BOX" "$left_pad" "" "$C_TITLE" "$title" "$C_RESET" "$right_pad" "" "$C_BOX" "$C_RESET"
 }
 
-# ====== 分级菜单解析（修复空格和空字段） ======
+# ====== 分级菜单解析 ======
 declare -A MENU_TREE
 declare -A MENU_CMD
 declare -A MENU_PARENT
@@ -98,22 +98,19 @@ ROOT_KEY="ROOT"
 MENU_TREE["$ROOT_KEY"]=""
 
 for line in "${RAW_LINES[@]}"; do
-  # 安全拆分，保留空字段
   IFS='|' read -r -a parts <<< "$line"
   parts_len=${#parts[@]}
   [ $parts_len -lt 2 ] && continue
 
-  # 名称在最左
   name="${parts[0]}"
-  # 命令在最右
   cmd="${parts[-1]}"
 
-  # 构建路径
   parent="$ROOT_KEY"
   for ((i=1;i<parts_len-1;i++)); do
     fld="${parts[i]}"
     [ -z "$fld" ] && continue
     full_path="$parent/$fld"
+    [ -z "${MENU_TREE[$parent]+x}" ] && MENU_TREE["$parent"]=""
     MENU_TREE["$parent"]="${MENU_TREE["$parent"]} $fld"
     MENU_PARENT["$full_path"]="$parent"
     parent="$full_path"
@@ -121,6 +118,7 @@ for line in "${RAW_LINES[@]}"; do
 
   # 添加叶子节点
   leaf_path="$parent/$name"
+  [ -z "${MENU_TREE[$parent]+x}" ] && MENU_TREE["$parent"]=""
   MENU_TREE["$parent"]="${MENU_TREE["$parent"]} $name"
   MENU_PARENT["$leaf_path"]="$parent"
   if [ -n "$cmd" ]; then
