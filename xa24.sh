@@ -96,20 +96,24 @@ declare -A LABEL
 declare -A CMD
 ORDERED_KEYS=()
 
+ROOT_KEY="__ROOT__"
+CURRENT_PATH="$ROOT_KEY"
+
 add_child() {
   local parent="$1"
   local child="$2"
   local child_label="$3"
 
   # 只在 parent 非空时添加 CHILDREN
-  if [ -n "$parent" ]; then
-    local existing="${CHILDREN["$parent"]:-}"
-    if [ -z "$existing" ]; then
-      CHILDREN["$parent"]="$child"
-    else
-      if ! printf '%s\n' "$existing" | grep -Fxq "$child"; then
-        CHILDREN["$parent"]="${existing}"$'\n'"${child}"
-      fi
+  local parent_key="$parent"
+  [ -z "$parent_key" ] && parent_key="$ROOT_KEY"
+
+  local existing="${CHILDREN["$parent_key"]:-}"
+  if [ -z "$existing" ]; then
+    CHILDREN["$parent_key"]="$child"
+  else
+    if ! printf '%s\n' "$existing" | grep -Fxq "$child"; then
+      CHILDREN["$parent_key"]="${existing}"$'\n'"${child}"
     fi
   fi
 
@@ -147,12 +151,12 @@ while IFS= read -r line || [ -n "$line" ]; do
   fi
 
   if [ ${#path_segments[@]} -eq 0 ]; then
-    parent=""
+    parent="$ROOT_KEY"
   else
     parent="$(join_slash "${path_segments[@]}")"
   fi
 
-  if [ -n "$parent" ]; then
+  if [ -n "$parent" ] && [ "$parent" != "$ROOT_KEY" ]; then
     if [ -z "${LABEL["$parent"]:-}" ]; then
       parent_label="${parent##*/}"
       LABEL["$parent"]="$parent_label"
@@ -162,7 +166,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     fi
   fi
 
-  if [ -z "$parent" ]; then
+  if [ "$parent" = "$ROOT_KEY" ]; then
     child="$name"
   else
     child="$parent/$name"
@@ -174,16 +178,16 @@ while IFS= read -r line || [ -n "$line" ]; do
   fi
 done < "$TMP_CONF"
 
-has_children() { local k="$1"; [ -n "${CHILDREN["$k"]:-}" ]; }
+has_children() { local k="$1"; local key="${k:-$ROOT_KEY}"; [ -n "${CHILDREN["$key"]:-}" ]; }
 is_leaf() { local k="$1"; [ -n "${CMD["$k"]:-}" ]; }
-
-breadcrumb() { [ -z "$1" ] && echo "Home" || echo "$1"; }
+breadcrumb() { [ "$1" = "$ROOT_KEY" ] && echo "Home" || echo "$1"; }
 
 print_page() {
   local current="$1" page="$2"
+  local key="${current:-$ROOT_KEY}"
   local -a list
-  if [ -n "${CHILDREN["$current"]:-}" ]; then
-    IFS=$'\n' read -r -d '' -a list < <(printf '%s\0' "${CHILDREN["$current"]}")
+  if [ -n "${CHILDREN["$key"]:-}" ]; then
+    IFS=$'\n' read -r -d '' -a list < <(printf '%s\0' "${CHILDREN["$key"]}")
   else
     list=()
   fi
@@ -194,14 +198,14 @@ print_page() {
 
   clear
   draw_line
-  draw_title "脚本管理器 (by Moreanp) — $(breadcrumb "$current")"
+  draw_title "脚本管理器 (by Moreanp) — $(breadcrumb "$key")"
   draw_mid
   for ((slot=0; slot<PER_PAGE; slot++)); do
     idx=$((start + slot))
     if (( idx < total )); then
-      key="${list[idx]}"
-      label="${LABEL["$key"]}"
-      if has_children "$key"; then
+      k="${list[idx]}"
+      label="${LABEL["$k"]}"
+      if has_children "$k"; then
         draw_text "${C_KEY}[$slot]${C_RESET} ${C_NAME}${label}${C_RESET}${C_DIV} /目录${C_RESET}"
       else
         draw_text "${C_KEY}[$slot]${C_RESET} ${C_NAME}${label}${C_RESET}"
@@ -263,7 +267,7 @@ search_mode() {
     draw_bot
     printf "%b搜索: %b" "$C_HINT" "$C_RESET"
     read -r pattern || true
-    [[ "$pattern" = "p" || "$pattern" = "P" ]] && { CURRENT_PATH=""; PAGE=1; return; }
+    [[ "$pattern" = "p" || "$pattern" = "P" ]] && { CURRENT_PATH="$ROOT_KEY"; PAGE=1; return; }
     [ -z "$pattern" ] && return
 
     local -a results_keys=()
@@ -312,7 +316,7 @@ search_mode() {
         [0-9]) idx=$((start + skey)); (( idx<total )) && run_key "${results_keys[idx]}" ;;
         n|N) ((r_page<pages)) && ((r_page++)) ;;
         b|B) ((r_page>1)) && ((r_page--)) ;;
-        p|P|"") return ;;
+        p|P|"") CURRENT_PATH="$ROOT_KEY"; PAGE=1; return ;;
         *) echo "⚠️ 无效输入"; sleep 0.6 ;;
       esac
     done
@@ -320,7 +324,6 @@ search_mode() {
 }
 
 # ====== 主循环 ======
-CURRENT_PATH=""
 PAGE=1
 while true; do
   print_page "$CURRENT_PATH" "$PAGE"
@@ -329,13 +332,14 @@ while true; do
   case "$key" in
     [0-9])
       list=()
-      [ -n "${CHILDREN["$CURRENT_PATH"]:-}" ] && IFS=$'\n' read -r -d '' -a list < <(printf '%s\0' "${CHILDREN["$CURRENT_PATH"]}")
+      key_for_children="${CURRENT_PATH:-$ROOT_KEY}"
+      [ -n "${CHILDREN["$key_for_children"]:-}" ] && IFS=$'\n' read -r -d '' -a list < <(printf '%s\0' "${CHILDREN["$key_for_children"]}")
       idx=$key
       (( idx<${#list[@]} )) && run_key "${list[idx]}"
       ;;
     n|N) ((PAGE++)) ;;
     b|B) ((PAGE>1)) && ((PAGE--)) ;;
-    p|P) CURRENT_PATH=""; PAGE=1 ;;
+    p|P) CURRENT_PATH="$ROOT_KEY"; PAGE=1 ;;
     s|S) search_mode ;;
     q|Q) clear; echo "👋 再见！"; exit 0 ;;
     *) echo "⚠️ 无效输入"; sleep 0.6 ;;
