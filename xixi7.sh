@@ -188,4 +188,70 @@ search_and_show() {
     name="${k##*::}"; key="$k"; cmd="${CMD_MAP[$k]}"
     [[ "$(echo "$name" | tr '[:upper:]' '[:lower:]')" == *"$keyword_lc"* ]] && matches+=("$key::$name::$cmd")
   done
-  [ ${#matches[@]} -eq 0 ] && { echo "
+  [ ${#matches[@]} -eq 0 ] && { echo "❌ 未找到匹配项，输入 p 返回菜单。"; read -rp "输入: " ans; [[ "$ans" == "p" ]] && return 2; return; }
+
+  local page=1
+  while true; do
+    local -a disp=()
+    for m in "${matches[@]}"; do disp+=("${m#*::}"); done
+    print_page_view "$page" "${disp[@]}"
+    printf "%b请输入编号(0-9)执行，p返回菜单，q退出: %b" "$C_HINT" "$C_RESET"
+    read -r in || true
+    case "$in" in
+      p|P) return 2 ;;
+      q|Q) clear; echo "👋 再见！"; exit 0 ;;
+      [0-9])
+        idx=$(( (page-1)*PER_PAGE + in ))
+        (( idx<0 || idx>=${#matches[@]} )) && { echo "❌ 无效编号"; read -rp "按回车继续..." _; continue; }
+        sel="${matches[$idx]}"; sel_key="${sel%%::*}"; sel_name="${sel#*::}"; sel_cmd="${sel##*::}"
+        clear
+        echo -e "${C_KEY}👉 正在执行：${C_NAME}${sel_name}${C_RESET}"
+        echo -e "${C_DIV}-----------------------------------------${C_RESET}"
+        [[ "$sel_cmd" =~ ^CMD: ]] && eval "${sel_cmd#CMD:}" || [[ "$sel_cmd" =~ ^https?:// ]] && bash <(curl -fsSL "$sel_cmd") || eval "$sel_cmd"
+        echo -e "${C_DIV}-----------------------------------------${C_RESET}"
+        read -rp $'按回车返回搜索结果...' _
+        ;;
+      n|N) ((page++)); maxp=$(( (${#matches[@]}+PER_PAGE-1)/PER_PAGE )); ((page>maxp)) && page=$maxp ;;
+      b|B) ((page--)); ((page<1)) && page=1 ;;
+      *) echo "⚠️ 无效输入"; sleep 0.5 ;;
+    esac
+  done
+}
+
+# ====== 主循环 ======
+current_parent="ROOT"; page=1
+while true; do
+  # 首页或子菜单：显示子菜单名称+叶子节点
+  IFS=$'\n' read -r -d '' -a view_items < <(
+    _get_children_array "$current_parent"
+    printf '\0'
+  )
+  VIEW_TOTAL=${#view_items[@]}; VIEW_PAGES=$(( (VIEW_TOTAL+PER_PAGE-1)/PER_PAGE )); [ $VIEW_PAGES -lt 1 ] && VIEW_PAGES=1
+  print_page_view "$page" "${view_items[@]}"
+
+  printf "%b请输入选项 (0-9/n/b/p/q/搜索): %b" "$C_HINT" "$C_RESET"
+  read -r key || true
+  key="$(echo -n "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+
+  case "$key" in
+    [0-9])
+      idx=$(( (page-1)*PER_PAGE + key )); (( idx<0 || idx>=VIEW_TOTAL )) && { echo "❌ 无效选项"; read -rp "按回车返回..." _; continue; }
+      sel="${view_items[$idx]}"
+      run_selected "$current_parent" "$sel"
+      rc=$?
+      if [ "$rc" -eq 2 ]; then
+        new_parent="$current_parent::$sel"; [ "$current_parent" == "ROOT" ] && new_parent="$sel"
+        if [ -n "${CHILDREN[$new_parent]:-}" ]; then current_parent="$new_parent"; page=1
+        else echo "⚠️ 当前项无下级且不可执行"; read -rp "按回车返回..." _; fi
+      fi
+      ;;
+    n|N) ((page<VIEW_PAGES)) && ((page++)) || { echo "已是最后一页"; read -rp "按回车返回..." _; } ;;
+    b|B)
+      if [ "$current_parent" == "ROOT" ]; then echo "已是主菜单"; read -rp "按回车返回..." _; else current_parent="${current_parent%::*}"; page=1; fi
+      ;;
+    p|P) current_parent="ROOT"; page=1 ;;
+    q|Q) clear; echo "👋 再见！"; exit 0 ;;
+    "") continue ;;
+    *) search_and_show "$key" ;;
+  esac
+done
