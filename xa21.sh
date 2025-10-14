@@ -33,7 +33,7 @@ fi
 # ====== 提权检测结束 ======
 
 # ====== 配置部分 ======
-CONFIG_URL="https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/scripts.conf"
+CONFIG_URL="https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/script1.conf"
 PER_PAGE=10
 BOX_WIDTH=60
 LEFT_INDENT="  "
