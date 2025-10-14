@@ -104,7 +104,6 @@ add_child() {
   local child="$2"
   local child_label="$3"
 
-  # 只在 parent 非空时添加 CHILDREN
   local parent_key="$parent"
   [ -z "$parent_key" ] && parent_key="$ROOT_KEY"
 
@@ -134,15 +133,15 @@ while IFS= read -r line || [ -n "$line" ]; do
   [[ -z "${line// }" ]] && continue
 
   IFS='|' read -r -a parts <<< "$line"
-  local_len=${#parts[@]}
-  if (( local_len < 2 )); then continue; fi
+  len=${#parts[@]}
+  if (( len < 2 )); then continue; fi
 
-  name="${parts[local_len-2]}"
-  cmd="${parts[local_len-1]}"
+  name="${parts[len-2]}"
+  cmd="${parts[len-1]}"
 
   path_segments=()
-  if (( local_len > 2 )); then
-    for ((i=0;i<local_len-2;i++)); do
+  if (( len > 2 )); then
+    for ((i=0;i<len-2;i++)); do
       seg="${parts[i]}"
       seg="${seg#"${seg%%[![:space:]]*}"}"
       seg="${seg%"${seg##*[![:space:]]}"}"
@@ -182,6 +181,7 @@ has_children() { local k="$1"; local key="${k:-$ROOT_KEY}"; [ -n "${CHILDREN["$k
 is_leaf() { local k="$1"; [ -n "${CMD["$k"]:-}" ]; }
 breadcrumb() { [ "$1" = "$ROOT_KEY" ] && echo "Home" || echo "$1"; }
 
+# ====== 打印菜单 ======
 print_page() {
   local current="$1" page="$2"
   local key="${current:-$ROOT_KEY}"
@@ -247,6 +247,7 @@ run_key() {
   read -rp "按回车返回..." _
 }
 
+# ====== 全局搜索 ======
 search_mode() {
   local -a leaf_keys=()
   local -a leaf_disp=()
