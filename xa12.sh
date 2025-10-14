@@ -3,7 +3,7 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-# ====== 自动提权（兼容 bash <(curl …) / curl | bash / 本地文件） ======
+# ====== 自动提权 ======
 if [ "$(id -u)" -ne 0 ]; then
   echo -e "\033[1;33m⚠️  检测到当前用户不是 root。\033[0m"
   if ! command -v sudo >/dev/null 2>&1; then
@@ -11,12 +11,10 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
   fi
   echo -e "\033[1;32m🔑  请输入当前用户的密码以获取管理员权限（sudo）...\033[0m"
-
   if [ -f "$0" ] && [ -r "$0" ]; then
     exec sudo -E bash "$0" "$@"
     exit $?
   fi
-
   TMP_SCRIPT="$(mktemp /tmp/menu_manager.XXXXXX.sh)"
   if [ -e "$0" ]; then
     if ! cat "$0" > "$TMP_SCRIPT" 2>/dev/null; then
@@ -26,14 +24,12 @@ if [ "$(id -u)" -ne 0 ]; then
     cat > "$TMP_SCRIPT"
   fi
   chmod +x "$TMP_SCRIPT"
-
   echo -e "\033[1;34mℹ️  已将脚本内容写入临时文件：$TMP_SCRIPT\033[0m"
   echo -e "\033[1;34m➡️  正在以 root 权限重新运行...\033[0m"
-
   exec sudo -E bash -c "trap 'rm -f \"$TMP_SCRIPT\"' EXIT; bash \"$TMP_SCRIPT\" \"$@\""
   exit $?
 fi
-# ====== 提权检测结束 ======
+# ====== 提权结束 ======
 
 # ====== 配置部分 ======
 CONFIG_URL="https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/script2.conf"
@@ -51,7 +47,7 @@ fi
 
 mapfile -t RAW_LINES < <(grep -vE '^\s*#|^\s*$' "$TMP_CONF")
 
-# ====== 色彩定义 ======
+# ====== 色彩 ======
 C_RESET="\033[0m"
 C_BOX="\033[1;38;5;202m"
 C_TITLE="\033[1;38;5;220m"
@@ -60,7 +56,7 @@ C_NAME="\033[1;38;5;39m"
 C_HINT="\033[1;32m"
 C_DIV="\033[38;5;240m"
 
-# ====== 宽度计算（支持全角字符） ======
+# ====== 宽度计算（全角支持） ======
 str_width() {
   local text="$1"
   text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
@@ -77,11 +73,10 @@ str_width() {
   echo "$len"
 }
 
-# ====== 绘制边框函数 ======
+# ====== 边框 ======
 draw_line() { printf "%b╔%s╗%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_mid()  { printf "%b╠%s╣%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
-
 draw_text() {
   local text="$1"
   local width
@@ -90,7 +85,6 @@ draw_text() {
   ((padding<0)) && padding=0
   printf "%b║%s%b%*s%b║%b\n" "$C_BOX" "$LEFT_INDENT" "$text" "$padding" "" "$C_BOX" "$C_RESET"
 }
-
 draw_title() {
   local title="$1"
   local width
@@ -102,90 +96,91 @@ draw_title() {
   printf "%b║%*s%b%s%b%*s%b║%b\n" "$C_BOX" "$left_pad" "" "$C_TITLE" "$title" "$C_RESET" "$right_pad" "" "$C_BOX" "$C_RESET"
 }
 
-# ====== 分级菜单解析 ======
-declare -A MENU_TREE      # key=父路径, value=子节点数组（空格分隔）
-declare -A MENU_CMD       # key=完整路径, value=命令（仅叶子节点）
-declare -A MENU_PARENT    # key=完整路径, value=父路径
+# ====== 分级菜单解析（支持空格和空字段） ======
+declare -A MENU_TREE
+declare -A MENU_CMD
+declare -A MENU_PARENT
 ROOT_KEY="ROOT"
 MENU_TREE["$ROOT_KEY"]=""
 
 for line in "${RAW_LINES[@]}"; do
-  # 解析行
-  level=$(echo "$line" | awk -F'|' '{print NF-2}') # 菜单层级（减去名称和命令）
-  IFS='|' read -r -a parts <<< "$line"
+  # 用 awk 安全拆分，保留空字段
+  IFS='|' read -r -a parts <<< "$(echo "$line" | awk -F'|' '{for(i=1;i<=NF;i++) printf "%s|",$i}')"
+  # 清理最后的多余 '|'
+  parts[-1]="${parts[-1]%|}"
+
+  # 从右往左找命令字段（第一个非空且符合 CMD:/bash/URL）
+  cmd=""
+  name=""
+  level=0
+  for ((i=${#parts[@]}-1;i>=0;i--)); do
+    if [[ "${parts[i]}" =~ ^(CMD:|bash|https?://) ]]; then
+      cmd="${parts[i]}"
+      break
+    fi
+  done
+
+  # 名称字段
   name="${parts[0]}"
-  cmd="${parts[-1]}"
-
-  # 计算父路径
-  if (( level == 0 )); then
-    parent="$ROOT_KEY"
-  else
-    # 上一个同级或上级的路径
-    for ((i=${#parts[@]}-2; i>=0; i--)); do
-      if [ -n "${parts[i]}" ]; then
-        parent_path="${parts[i]}"
-        break
-      fi
-    done
-    parent="$parent_path"
-    [ -z "$parent" ] && parent="$ROOT_KEY"
-  fi
-
-  full_path="$parent/$name"
-  MENU_PARENT["$full_path"]="$parent"
-
-  # 添加子节点到父菜单
-  if [ -z "${MENU_TREE[$parent]+x}" ]; then
-    MENU_TREE[$parent]="$name"
-  else
-    MENU_TREE[$parent]="${MENU_TREE[$parent]} $name"
-  fi
-
-  # 如果有命令，标记为叶子节点
-  if [[ "$cmd" =~ ^(https?|CMD:|bash) ]]; then
-    MENU_CMD["$full_path"]="$cmd"
+  # 父路径根据中间非空字段构建
+  parent="$ROOT_KEY"
+  path_fields=()
+  for ((i=1;i<${#parts[@]};i++)); do
+    if [ -n "${parts[i]}" ]; then
+      path_fields+=("${parts[i]}")
+    fi
+  done
+  # 完整路径
+  full_path="$parent"
+  for fld in "${path_fields[@]}"; do
+    full_path="$full_path/$fld"
+    # 添加子节点
+    MENU_TREE[$parent]="${MENU_TREE[$parent]} $fld"
+    MENU_PARENT["$full_path"]="$parent"
+    parent="$full_path"
+  done
+  # 添加叶子节点
+  leaf_path="$parent/$name"
+  MENU_TREE[$parent]="${MENU_TREE[$parent]} $name"
+  MENU_PARENT["$leaf_path"]="$parent"
+  if [ -n "$cmd" ]; then
+    MENU_CMD["$leaf_path"]="$cmd"
   fi
 done
 
-# ====== 菜单栈管理 ======
+# ====== 菜单栈 ======
 MENU_STACK=()
 CURRENT_PATH="$ROOT_KEY"
 
-# ====== 菜单渲染 ======
+# ====== 渲染菜单 ======
 render_menu() {
   local path="$1"
-  local children="${MENU_TREE[$path]}"
-  local arr=($children)
-
+  local children=(${MENU_TREE[$path]})
   clear
   draw_line
   draw_title "脚本管理器 (by Moreanp)"
   draw_mid
-
   for i in $(seq 0 $((PER_PAGE-1))); do
-    if (( i < ${#arr[@]} )); then
-      draw_text "${C_KEY}[$i]${C_RESET} ${C_NAME}${arr[i]}${C_RESET}"
+    if (( i < ${#children[@]} )); then
+      draw_text "${C_KEY}[$i]${C_RESET} ${C_NAME}${children[i]}${C_RESET}"
     else
       draw_text ""
     fi
   done
-
   draw_mid
-  draw_text "第 1/1 页   共 ${#arr[@]} 项"
+  draw_text "第 1/1 页   共 ${#children[@]} 项"
   draw_text "[ p ] 返回上一级   [ q ] 退出"
   draw_text "[ 输入关键字直接搜索叶子节点 ]"
   draw_bot
 }
 
-# ====== 运行叶子节点命令 ======
+# ====== 执行叶子节点 ======
 run_leaf() {
   local full_path="$1"
   local cmd="${MENU_CMD[$full_path]}"
-
   clear
   echo -e "${C_KEY}👉 正在执行：${C_NAME}${full_path##*/}${C_RESET}"
   echo -e "${C_DIV}-----------------------------------------${C_RESET}"
-
   if [[ "$cmd" =~ ^CMD: ]]; then
     eval "${cmd#CMD:}"
   elif [[ "$cmd" =~ ^https?:// ]]; then
@@ -193,7 +188,6 @@ run_leaf() {
   else
     eval "$cmd"
   fi
-
   echo -e "${C_DIV}-----------------------------------------${C_RESET}"
   read -rp $'按回车返回菜单...' _
 }
@@ -221,11 +215,9 @@ search_leaf() {
   draw_line
   draw_title "搜索结果"
   draw_mid
-
   for i in "${!results[@]}"; do
     draw_text "${C_KEY}[$i]${C_RESET} ${C_NAME}${results[i]##*/}${C_RESET}"
   done
-
   draw_bot
   read -rp "选择执行: " idx
   [[ "$idx" =~ ^[0-9]+$ ]] && [[ "$idx" -lt ${#results[@]} ]] && run_leaf "${results[idx]}"
@@ -259,7 +251,6 @@ while true; do
       fi
       ;;
     *)
-      # 输入非数字，执行模糊搜索
       search_leaf "$input"
       ;;
   esac
