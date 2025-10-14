@@ -3,7 +3,7 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-# ====== 自动提权（兼容 bash <(curl …) / curl | bash / 本地文件） ======
+# ====== 自动提权 ======
 if [ "$(id -u)" -ne 0 ]; then
   echo -e "\033[1;33m⚠️  检测到当前用户不是 root。\033[0m"
   if ! command -v sudo >/dev/null 2>&1; then
@@ -12,26 +12,14 @@ if [ "$(id -u)" -ne 0 ]; then
   fi
   echo -e "\033[1;32m🔑  请输入当前用户的密码以获取管理员权限（sudo）...\033[0m"
 
+  TMP_SCRIPT="$(mktemp /tmp/menu.XXXXXX.sh)"
   if [ -f "$0" ] && [ -r "$0" ]; then
-    exec sudo -E bash "$0" "$@"
-    exit $?
-  fi
-
-  TMP_SCRIPT="$(mktemp /tmp/menu_manager.XXXXXX.sh)"
-  if [ -e "$0" ]; then
-    if ! cat "$0" > "$TMP_SCRIPT" 2>/dev/null; then
-      cat > "$TMP_SCRIPT"
-    fi
+    cat "$0" >"$TMP_SCRIPT"
   else
-    cat > "$TMP_SCRIPT"
+    cat >"$TMP_SCRIPT"
   fi
   chmod +x "$TMP_SCRIPT"
-
-  echo -e "\033[1;34mℹ️  已将脚本内容写入临时文件：$TMP_SCRIPT\033[0m"
-  echo -e "\033[1;34m➡️  正在以 root 权限重新运行...\033[0m"
-
   exec sudo -E bash -c "trap 'rm -f \"$TMP_SCRIPT\"' EXIT; bash \"$TMP_SCRIPT\" \"$@\""
-  exit $?
 fi
 
 # ====== 配置部分 ======
@@ -50,16 +38,15 @@ fi
 
 mapfile -t ALL_LINES < <(grep -vE '^\s*#|^\s*$' "$TMP_CONF")
 
-# ====== 色彩定义 ======
+# ====== 颜色 ======
 C_RESET="\033[0m"
 C_BOX="\033[1;38;5;202m"
 C_TITLE="\033[1;38;5;220m"
 C_KEY="\033[1;32m"
 C_NAME="\033[1;38;5;39m"
 C_HINT="\033[1;32m"
-C_DIV="\033[38;5;240m"
 
-# ====== 宽度计算（支持全角字符） ======
+# ====== 工具函数 ======
 str_width() {
   local text="$1"
   text=$(echo -ne "$text" | sed 's/\x1B\[[0-9;]*[a-zA-Z]//g')
@@ -76,7 +63,6 @@ str_width() {
   echo "$len"
 }
 
-# ====== 绘制框函数 ======
 draw_line() { printf "%b╔%s╗%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_mid()  { printf "%b╠%s╣%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
 draw_bot()  { printf "%b╚%s╝%b\n" "$C_BOX" "$(printf '═%.0s' $(seq 1 $((BOX_WIDTH-2))))" "$C_RESET"; }
@@ -96,12 +82,10 @@ draw_title() {
   width=$(str_width "$title")
   local left_pad=$(( (BOX_WIDTH - width - 2)/2 ))
   local right_pad=$((BOX_WIDTH - width - left_pad - 2))
-  [ $left_pad -lt 0 ] && left_pad=0
-  [ $right_pad -lt 0 ] && right_pad=0
   printf "%b║%*s%b%s%b%*s%b║%b\n" "$C_BOX" "$left_pad" "" "$C_TITLE" "$title" "$C_RESET" "$right_pad" "" "$C_BOX" "$C_RESET"
 }
 
-# ====== 配置解析：构建菜单树 ======
+# ====== 构建菜单树 ======
 declare -A CMD_MAP
 declare -A CHILDREN
 SEP=$'\x1f'
@@ -137,33 +121,27 @@ for line in "${ALL_LINES[@]}"; do
 
   CMD_MAP["${parent_key}::${leaf}"]="$cmd"
   existing="${CHILDREN[$parent_key]:-}"
-  if [[ "$existing" != *"${SEP}${leaf}${SEP}"* && "$existing" != "${leaf}${SEP}"* && "$existing" != *"${SEP}${leaf}"* ]]; then
-    CHILDREN[$parent_key]="${existing}${leaf}${SEP}"
-  fi
+  CHILDREN[$parent_key]="${existing}${leaf}${SEP}"
 done
 
-# 添加：确保 ROOT 同时包含无父级叶子项
+# 补充：确保ROOT含有所有“孤立叶子节点”
 for key in "${!CMD_MAP[@]}"; do
   parent="${key%::*}"
-  [[ "$parent" == "$key" ]] && continue
-  if [ "$parent" != "ROOT" ]; then
-    continue
-  fi
   leaf="${key##*::}"
-  existing="${CHILDREN[ROOT]:-}"
-  [[ "$existing" != *"$leaf"* ]] && CHILDREN[ROOT]="${existing}${leaf}${SEP}"
+  if [ "$parent" != "ROOT" ] && [ -z "${CHILDREN[$parent]:-}" ]; then
+    CHILDREN["ROOT"]+="${leaf}${SEP}"
+  fi
 done
 
-# ====== 取当前菜单的所有显示项（包含子目录+叶子） ======
+# ====== 获取子项 ======
 _get_children_array() {
   local key="$1"
-  local -a children=()
+  local -a result=()
   local raw="${CHILDREN[$key]:-}"
-  if [ -n "$raw" ]; then
-    IFS=$'\x1f' read -r -a temp <<< "$raw"
-    for c in "${temp[@]}"; do [ -n "$c" ] && children+=("$c"); done
-  fi
-  echo "${children[@]}"
+  [ -z "$raw" ] && echo "" && return
+  IFS=$'\x1f' read -r -a temp <<< "$raw"
+  for t in "${temp[@]}"; do [ -n "$t" ] && result+=("$t"); done
+  echo "${result[@]}"
 }
 
 # ====== 分页展示 ======
@@ -185,8 +163,7 @@ print_page_view() {
   for slot in $(seq 0 $((PER_PAGE-1))); do
     idx=$((start+slot))
     if ((idx<=end)); then
-      name="${items[idx]}"
-      draw_text "${C_KEY}[$slot]${C_RESET} ${C_NAME}${name}${C_RESET}"
+      draw_text "${C_KEY}[$slot]${C_RESET} ${C_NAME}${items[idx]}${C_RESET}"
     else
       draw_text ""
     fi
@@ -194,11 +171,11 @@ print_page_view() {
   draw_mid
   draw_text "第 $page/$pages 页   共 $total 项"
   draw_text "[ n ] 下一页   [ b ] 上一页"
-  draw_text "[ q ] 退出     [ 0-9 ] 选择"
+  draw_text "[ p ] 返回主菜单   [ q ] 退出"
   draw_bot
 }
 
-# ====== 执行命令 ======
+# ====== 执行 ======
 run_selected() {
   local parent_key="$1"
   local name="$2"
@@ -207,18 +184,18 @@ run_selected() {
 
   clear
   echo -e "${C_KEY}👉 正在执行：${C_NAME}${name}${C_RESET}"
-  echo -e "${C_DIV}-----------------------------------------${C_RESET}"
+  echo -e "-----------------------------------------"
 
   if [[ "$cmd" =~ ^https?:// ]]; then
     bash <(curl -fsSL "$cmd")
   else
     eval "$cmd"
   fi
-  echo -e "${C_DIV}-----------------------------------------${C_RESET}"
+  echo -e "-----------------------------------------"
   read -rp "按回车返回菜单..." _
 }
 
-# ====== 全局搜索（仅匹配可执行叶子项） ======
+# ====== 全局搜索 ======
 search_and_show() {
   local keyword="$1"
   [ -z "$keyword" ] && return 1
@@ -239,23 +216,20 @@ search_and_show() {
     printf "%b输入编号(0-9)/p返回主菜单/q退出/关键词继续搜索:%b" "$C_HINT" "$C_RESET"
     read -r in || true
     case "$in" in
-      p|P) return 2 ;;
+      p|P) return 3 ;;  # ✅ 返回主菜单信号
       q|Q) clear; echo "👋 再见！"; exit 0 ;;
       [0-9])
         idx=$(( (page-1)*PER_PAGE + in ))
-        (( idx>=0 && idx<${#matches[@]} )) || { echo "❌ 无效编号"; read -rp "按回车继续..." _; continue; }
+        (( idx>=0 && idx<${#matches[@]} )) || continue
         sel="${matches[$idx]}"
         sel_name="${sel%%|*}"
         sel_key="${sel#*|}"
         parent="${sel_key%::*}"
         run_selected "$parent" "$sel_name"
         ;;
-      n|N)
-        ((page++)); max=$(( (${#matches[@]} + PER_PAGE -1)/PER_PAGE )); ((page>max)) && page=$max ;;
-      b|B)
-        ((page--)); ((page<1)) && page=1 ;;
-      *)
-        search_and_show "$in"; return $? ;;
+      n|N) ((page++)); max=$(( (${#matches[@]} + PER_PAGE -1)/PER_PAGE )); ((page>max)) && page=$max ;;
+      b|B) ((page--)); ((page<1)) && page=1 ;;
+      *) search_and_show "$in"; return $? ;;
     esac
   done
 }
@@ -269,19 +243,18 @@ while true; do
   ((total==0)) && view_items=("（无可显示项）")
   print_page_view "$page" "${view_items[@]}"
 
-  printf "%b请输入选项 (0-9/n/b/q/搜索):%b" "$C_HINT" "$C_RESET"
+  printf "%b请输入选项 (0-9/n/b/p/q/搜索):%b" "$C_HINT" "$C_RESET"
   read -r key || true
   key="$(echo "$key" | xargs)"
   case "$key" in
     [0-9])
       idx=$(( (page-1)*PER_PAGE + key ))
-      (( idx<0 || idx>=total )) && { echo "❌ 无效选项"; read -rp "按回车返回..." _; continue; }
+      (( idx<0 || idx>=total )) && continue
       sel="${view_items[$idx]}"
       run_selected "$current_parent" "$sel" || rc=$?
       if [ "$rc" -eq 2 ]; then
         [ "$current_parent" == "ROOT" ] && new="$sel" || new="${current_parent}::${sel}"
-        if [ -n "${CHILDREN[$new]:-}" ]; then current_parent="$new"; page=1
-        else echo "⚠️ 无下级菜单"; read -rp "按回车返回..." _; fi
+        if [ -n "${CHILDREN[$new]:-}" ]; then current_parent="$new"; page=1; fi
       fi
       ;;
     n|N) ((page++)); max=$(( (total+PER_PAGE-1)/PER_PAGE )); ((page>max)) && page=$max ;;
@@ -293,9 +266,9 @@ while true; do
         page=1
       fi
       ;;
-    q|Q) clear; echo "👋 再见！"; exit 0 ;;
     p|P) current_parent="ROOT"; page=1 ;;
+    q|Q) clear; echo "👋 再见！"; exit 0 ;;
     "") ;;
-    *) search_and_show "$key"; [ $? -eq 2 ] && { current_parent="ROOT"; page=1; } ;;
+    *) search_and_show "$key"; [ $? -eq 3 ] && { current_parent="ROOT"; page=1; } ;;
   esac
 done
