@@ -159,19 +159,21 @@ print_page(){
   draw_title "脚本管理器 (by Moreanp)"
   draw_mid
 
-  local start=$(( (pagev-1)*PER_PAGE ))
-  local end=$(( start+PER_PAGE-1 )); ((end>=TOTAL)) && end=$((TOTAL-1))
-  if (( TOTAL>0 && start<=end )); then
-    for i in $(seq $start $end); do
+  if (( TOTAL == 0 )); then
+    draw_text "（该目录为空）"
+  else
+    local start=$(( (pagev-1)*PER_PAGE ))
+    local end=$(( start+PER_PAGE-1 )); ((end>=TOTAL)) && end=$((TOTAL-1))
+    local idx=0
+    for ((i=start;i<=end;i++)); do
       entry="${DISPLAY_LINES[i]}"
       if [[ "$entry" == DIR:* ]]; then
-        draw_text "${C_KEY}[$((i-start))]${C_RESET} ${C_RUN}${entry#DIR:}${C_RESET}"
+        draw_text "${C_KEY}[$idx]${C_RESET} ${C_RUN}${entry#DIR:}${C_RESET}"
       else
-        draw_text "${C_KEY}[$((i-start))]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
+        draw_text "${C_KEY}[$idx]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
       fi
+      ((idx++))
     done
-  else
-    draw_text "（该目录为空）"
   fi
 
   draw_mid
@@ -221,34 +223,54 @@ do_search(){
   SEARCH_RESULTS=()
   lc_kw=$(echo "$keyword" | tr '[:upper:]' '[:lower:]')
   for key in "${!ITEMS[@]}"; do
-    name="${key##*/}"; [[ $(echo "$name" | tr '[:upper:]' '[:lower:]') == *"$lc_kw"* ]] && SEARCH_RESULTS+=("${ITEMS[$key]}")
+    name="${key##*/}"
+    lc_key=$(echo "$name" | tr '[:upper:]' '[:lower:]')
+    [[ "$lc_key" == *"$lc_kw"* ]] && SEARCH_RESULTS+=("${ITEMS[$key]}")
   done
-  (( ${#SEARCH_RESULTS[@]} == 0 )) && { echo -e "${C_WARN}! 未找到匹配: '$keyword'${C_RESET}"; read -rp $'按回车返回...' _; return; }
-  push_menu_stack "$CURRENT_PATH" "$page"
-  CURRENT_PATH="__SEARCH__/$keyword"; DISPLAY_LINES=("${SEARCH_RESULTS[@]}"); TOTAL=${#DISPLAY_LINES[@]}; PAGES=$(( (TOTAL+PER_PAGE-1)/PER_PAGE )); page=1
-
-  clear; draw_line; draw_title "脚本管理器 (搜索：${keyword})"; draw_mid
-  local start=$(( (page-1)*PER_PAGE )); local end=$(( start+PER_PAGE-1 )); ((end>=TOTAL)) && end=$((TOTAL-1))
-  if (( TOTAL>0 && start<=end )); then
-    for i in $(seq $start $end); do draw_text "${C_KEY}[$((i-start))]${C_RESET} ${C_EXEC}${DISPLAY_LINES[i]%%|*}${C_RESET}"; done
-  else
-    draw_text "（搜索结果为空）"
+  if ((${#SEARCH_RESULTS[@]}==0)); then
+    echo -e "${C_WARN}! 未找到匹配: '$keyword'${C_RESET}"; read -rp $'按回车返回...' _; return
   fi
-  draw_mid; draw_text "搜索结果 ${page}/${PAGES} 共 ${TOTAL} 项"; draw_text "[ q ] 返回上一级     [ 0-9 ] 选择"; draw_bot
+
+  push_menu_stack "$CURRENT_PATH" "$page"
+  CURRENT_PATH="__SEARCH__/$keyword"
+  DISPLAY_LINES=("${SEARCH_RESULTS[@]}")
+  TOTAL=${#DISPLAY_LINES[@]}
+  PAGES=$(( (TOTAL+PER_PAGE-1)/PER_PAGE ))
+  page=1
+
+  clear
+  draw_line
+  draw_title "脚本管理器 (搜索：${keyword})"
+  draw_mid
+  local start=$(( (page-1)*PER_PAGE )); local end=$(( start+PER_PAGE-1 )); ((end>=TOTAL)) && end=$((TOTAL-1))
+  local idx=0
+  for ((i=start;i<=end;i++)); do
+    entry="${DISPLAY_LINES[i]}"
+    draw_text "${C_KEY}[$idx]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"; ((idx++))
+  done
+  draw_mid
+  draw_text "搜索结果 ${page}/${PAGES} 共 ${#DISPLAY_LINES[@]} 项"
+  draw_text "[ q ] 返回上一级     [ 0-9 ] 选择"
+  draw_bot
 }
 
 # ====== 主循环 ======
 while true; do
   [[ "$CURRENT_PATH" != __SEARCH__/* ]] && print_page "$CURRENT_PATH" "$page"
+
   printf "%b选项 (0-9 or 输入关键字搜索): %b" "$C_KEY" "$C_RESET"
   read -r key || true
-  [[ -z "$key" ]] && continue
+  [[ -z "${key:-}" ]] && continue
+
   case "$key" in
     [0-9]) run_slot "$page" "$key" ;;
     n|N) ((page<PAGES)) && ((page++)) || { echo "已是最后一页"; read -rp $'按回车返回...' _; } ;;
     b|B) ((page>1)) && ((page--)) || { echo "已是第一页"; read -rp $'按回车返回...' _; } ;;
     q|Q)
-      if [[ "$CURRENT_PATH" == __SEARCH__/* ]]; then CURRENT_PATH="ROOT"; page=1; DISPLAY_LINES=()
+      if [[ "$CURRENT_PATH" == __SEARCH__/* ]]; then
+        read -r prev_path prev_page < <(pop_menu_stack || printf "\n\n")
+        [[ -z "$prev_path" && -z "$prev_page" ]] && { clear; echo "→ 再见！"; exit 0; }
+        CURRENT_PATH="$prev_path"; page="$prev_page"; DISPLAY_LINES=()
       elif ((${#MENU_STACK[@]}>0)); then
         read -r prev_path prev_page < <(pop_menu_stack || printf "\n\n")
         [[ -z "$prev_path" && -z "$prev_page" ]] && { clear; echo "→ 再见！"; exit 0; }
