@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# menu_manager_v2_noemoji_fix.sh
+# menu_manager_v2_noemoji_final.sh
 # 支持：无限层级目录（两个空格为一级） + 兼容旧 bash + 跨目录模糊搜索
 set -o errexit
 set -o pipefail
@@ -192,6 +192,7 @@ pop_menu_stack() {
 print_page() {
   local path="$1"
   local pagev="$2"
+  DISPLAY_LINES=("${DISPLAY_LINES[@]:-}")  # 保证是数组
   DISPLAY_LINES=()
 
   for key in "${!CHILDREN[@]}"; do
@@ -352,7 +353,7 @@ do_search() {
   done
   draw_mid
   draw_text "搜索结果 ${page}/${PAGES} 共 ${#DISPLAY_LINES[@]} 项"
-  draw_text "[ q ] 返回主菜单     [ 0-9 ] 选择"
+  draw_text "[ q ] 返回上一级     [ 0-9 ] 选择"
   draw_bot
 }
 
@@ -383,7 +384,6 @@ while true; do
       ;;
     q|Q)
       if [[ "$CURRENT_PATH" == __SEARCH__/* ]]; then
-        # 搜索界面直接返回主菜单
         CURRENT_PATH="ROOT"
         page=1
         DISPLAY_LINES=()
@@ -394,6 +394,7 @@ while true; do
         fi
         CURRENT_PATH="$prev_path"
         page="$prev_page"
+        DISPLAY_LINES=()
       else
         clear; echo "→ 再见！"; exit 0
       fi
