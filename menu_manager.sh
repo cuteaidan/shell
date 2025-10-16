@@ -34,7 +34,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 # ====== 提权结束 ======
 
-CONFIG_URL="https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/scripts_hier.conf"
+CONFIG_URL="https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/scripts1.conf"
 PER_PAGE=10
 BOX_WIDTH=50
 LEFT_INDENT="        "
