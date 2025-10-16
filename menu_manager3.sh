@@ -249,8 +249,8 @@ print_page() {
     pshow="${path#ROOT}"
   fi
   draw_text "路径：${pshow}"
-  draw_text "[ n ] 下一页   [ b ] 上一页"
-  draw_text "[ q ] 上一级     [ 0-9 ] 选择   [ 输入关键字进行模糊搜索 ]"
+  draw_text "[ n ] 下页   [ b ] 上页"
+  draw_text "[ q ] 上级   [0-9] 选择"
   draw_bot
 
   page=$pagev
