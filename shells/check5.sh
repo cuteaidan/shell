@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# check_domains_v3_color_fixed.sh
-# 交互式域名延迟测速工具 v3 — 彩色表格修正版
+# check_domains_v3_color_fixed_v2.sh
+# 交互式域名延迟测速工具 v3 — 表格对齐修复 + 输入可编辑
 
 set -o errexit
 set -o pipefail
@@ -125,6 +125,8 @@ run_test() {
     if [ "$num_domains" -ge 20 ] || [ "$n" -eq 0 ]; then display_limit=10; fi
 
     # ======= 打印表格 =======
+    width_avg=10
+    width_succ=10
     printf "%-4s %-45s %10s %8s %8s %10s\n" "Rank" "Domain" "Avg(ms)" "Min" "Max" "Succ/${ATTEMPTS_PER_DOMAIN}"
     printf "%-4s %-45s %10s %8s %8s %10s\n" "----" "---------------------------------------------" "--------" "----" "----" "--------"
 
@@ -133,19 +135,28 @@ run_test() {
         rank=$((rank+1))
         [ "$rank" -gt "$display_limit" ] && break
 
+        # 格式化列宽，不算颜色码
         if [ "$avg" -ge 9999999 ]; then
-            avg_disp="TIMEOUT"
-            succ_disp="0/${ATTEMPTS_PER_DOMAIN}"
+            avg_fmt=$(printf "%${width_avg}s" "TIMEOUT")
+            succ_fmt=$(printf "%${width_succ}s" "0/${ATTEMPTS_PER_DOMAIN}")
         else
-            avg_disp="${GREEN}${avg}${RESET}"
-            if [ "$succ" -lt "$ATTEMPTS_PER_DOMAIN" ]; then
-                succ_disp="${RED}${succ}/${ATTEMPTS_PER_DOMAIN}${RESET}"
-            else
-                succ_disp="${GREEN}${succ}/${ATTEMPTS_PER_DOMAIN}${RESET}"
-            fi
+            avg_fmt=$(printf "%${width_avg}d" "$avg")
+            succ_fmt=$(printf "%${width_succ}s" "$succ/$ATTEMPTS_PER_DOMAIN")
         fi
 
-        printf "%-4d %-45s %10b %8d %8d %10b\n" "$rank" "$dom" "$avg_disp" "$min" "$max" "$succ_disp"
+        # 添加颜色
+        if [ "$avg" -ge 9999999 ]; then
+            avg_disp="${RED}${avg_fmt}${RESET}"
+        else
+            avg_disp="${GREEN}${avg_fmt}${RESET}"
+        fi
+        if [ "$succ" -lt "$ATTEMPTS_PER_DOMAIN" ]; then
+            succ_disp="${RED}${succ_fmt}${RESET}"
+        else
+            succ_disp="${GREEN}${succ_fmt}${RESET}"
+        fi
+
+        printf "%-4d %-45s %s %8d %8d %s\n" "$rank" "$dom" "$avg_disp" "$min" "$max" "$succ_disp"
     done <"$sorted"
 
     if [ "$display_limit" -lt "$num_domains" ]; then
@@ -167,7 +178,7 @@ while true; do
     echo "  a / all = 测试全部域名（默认尝试 1 次）"
     echo "  q / quit = 退出"
     echo
-    read -rp "请输入选择 (回车默认 10): " choice
+    read -e -p "请输入选择 (回车默认 10): " choice
 
     case "$choice" in
         ""|1)
@@ -192,7 +203,7 @@ while true; do
             ;;
     esac
 
-    read -rp "请输入每个域名的测试次数 (默认 ${default_attempts}): " input_attempts
+    read -e -p "请输入每个域名的测试次数 (默认 ${default_attempts}): " input_attempts
     if [[ "$input_attempts" =~ ^[1-9][0-9]*$ ]]; then
         ATTEMPTS_PER_DOMAIN=$input_attempts
     else
@@ -202,7 +213,7 @@ while true; do
     run_test "$n" "$ATTEMPTS_PER_DOMAIN"
 
     while true; do
-        read -rp "是否继续？(r=重新随机, 1/2/a=改模式, q=退出): " next
+        read -e -p "是否继续？(r=重新随机, 1/2/a=改模式, q=退出): " next
         case "$next" in
             r|R)
                 echo "重新随机测试..."
@@ -215,6 +226,9 @@ while true; do
             q|Q|quit|QUIT)
                 echo "退出程序 👋"
                 exit 0
+                ;;
+            "")
+                echo "输入为空，请重新输入。"
                 ;;
             *)
                 echo "输入无效，请重新输入。"
