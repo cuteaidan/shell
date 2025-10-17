@@ -353,7 +353,7 @@ do_search() {
   done
   draw_mid
   draw_text "搜索结果 ${page}/${PAGES} 共 ${#DISPLAY_LINES[@]} 项"
-  draw_text "[ q ] 返回上一级     [ 0-9 ] 选择"
+  draw_text "[ q ] 上一级     [ 0-9 ] 选择"
   draw_bot
 }
 
@@ -364,7 +364,7 @@ while true; do
     print_page "$CURRENT_PATH" "$page"
   fi
 
-  printf "%b选项 (0-9 or 输入关键字搜索): %b" "$C_HINT" "$C_RESET"
+  printf "%b选项 (0-9): %b" "$C_HINT" "$C_RESET"
   read -r key || true
 
   if [[ -z "${key:-}" ]]; then
