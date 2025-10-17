@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ========================================================
-# Moreanp 彩色登录 Banner 安装脚本（单次显示）
+# Moreanp 彩色登录 Banner 安装脚本（单次显示，兼容大多数 Linux）
 # ========================================================
 
 set -e
@@ -21,29 +21,31 @@ fi
 # ========================================================
 cat > "$BANNER_PATH" <<'EOF'
 #!/usr/bin/env bash
-# Moreanp 彩色 Banner（单次显示）
+# Moreanp 彩色 Banner（单次显示，兼容大多数 Linux）
 
-# CPU 使用率（/proc/stat 方法）
-CPU=$(awk '
-BEGIN {FS=" "}
-NR==1 {
-    user=$2; nice=$3; system=$4; idle=$5
-    total=user+nice+system+idle
-    usage=(user+nice+system)*100/total
-    printf "%.1f%%", usage
-}
-' /proc/stat)
+# 获取 CPU 使用率（从 /proc/stat）
+if [ -r /proc/stat ]; then
+  CPU=($(awk '/^cpu /{for(i=2;i<=5;i++) t+=$i; print $2,$3,$4,$5}' /proc/stat))
+  TOTAL=$((CPU[0]+CPU[1]+CPU[2]+CPU[3]))
+  IDLE=${CPU[3]}
+  CPU_USAGE=$((100*(TOTAL-IDLE)/TOTAL))
+  CPU_USAGE="${CPU_USAGE}%"
+else
+  CPU_USAGE="N/A"
+fi
 
-# 内存使用率
-MEM=$(free -m | awk '/Mem:/ {printf "%.1f%%", $3/$2*100}')
+# 获取内存占用
+MEM_USAGE=$(free -m 2>/dev/null | awk '/Mem:/ {printf "%.1f%%", $3/$2*100}')
+MEM_USAGE=${MEM_USAGE:-N/A}
 
 # 根目录磁盘占用
-DISK=$(df -h / | awk 'NR==2{print $5}')
+DISK_USAGE=$(df -h / 2>/dev/null | awk 'NR==2{print $5}')
+DISK_USAGE=${DISK_USAGE:-N/A}
 
 # 外网 IP
-IP=$(curl -s --max-time 2 https://api.ipify.org || echo "N/A")
+EXT_IP=$(curl -s --max-time 2 https://api.ipify.org || echo "N/A")
 
-# 彩色艺术字（原封不动）
+# 彩色艺术字（保持原样）
 echo -e "[0;1;31;91m▄[0m    [0;1;36;96m▄[0m                                          "
 echo -e "[0;1;33;93m█[0;1;32;92m█[0m  [0;1;36;96m█[0;1;34;94m█[0m  [0;1;35;95m▄[0;1;31;91m▄▄[0m    [0;1;36;96m▄[0m [0;1;34;94m▄▄[0m   [0;1;31;91m▄[0;1;33;93m▄▄[0m    [0;1;34;94m▄▄[0;1;35;95m▄[0m   [0;1;33;93m▄[0m [0;1;32;92m▄▄[0m   [0;1;34;94m▄[0;1;35;95m▄▄[0;1;31;91m▄[0m  "
 echo -e "[0;1;32;92m█[0m [0;1;36;96m█[0;1;34;94m█[0m [0;1;35;95m█[0m [0;1;31;91m█▀[0m [0;1;33;93m▀[0;1;32;92m█[0m   [0;1;34;94m█▀[0m  [0;1;31;91m▀[0m [0;1;33;93m█▀[0m  [0;1;36;96m█[0m  [0;1;34;94m▀[0m   [0;1;31;91m█[0m  [0;1;32;92m█▀[0m  [0;1;34;94m█[0m  [0;1;35;95m█[0;1;31;91m▀[0m [0;1;33;93m▀█[0m "
@@ -55,8 +57,8 @@ echo
 echo -e "                                  Powered by Moreanp     "
 echo -e " -------------------------------------------------------"
 
-# 动态信息（单行）
-printf " CPU: %-7s | MEM: %-7s | DISK: %-6s | IP: %s\n" "$CPU" "$MEM" "$DISK" "$IP"
+# 显示系统信息
+printf " CPU: %-7s | MEM: %-7s | DISK: %-6s | IP: %s\n" "$CPU_USAGE" "$MEM_USAGE" "$DISK_USAGE" "$EXT_IP"
 echo -e " -------------------------------------------------------"
 EOF
 
