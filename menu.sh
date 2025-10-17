@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# menu_manager_v2_noemoji_fixed_final_v2.sh
-# 完全修复多层级目录和搜索返回问题
 set -o errexit
 set -o pipefail
 set -o nounset
