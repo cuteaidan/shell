@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# check_domains_v3_color_fixed_v2.sh
-# 交互式域名延迟测速工具 v3 — 表格对齐修复 + 输入可编辑
+# check_domains_v3_color_aligned.sh
+# 域名延迟测试工具 v3 — 表格对齐修复 + 输入可编辑
 
 set -o errexit
 set -o pipefail
@@ -13,7 +13,7 @@ YELLOW="\033[1;33m"
 RESET="\033[0m"
 
 # ======= 域名列表 =======
-domains=(
+domains=( 
 "amd.com" "aws.com" "c.6sc.co" "j.6sc.co" "b.6sc.co" "intel.com" "r.bing.com" "th.bing.com"
 "www.amd.com" "www.aws.com" "ipv6.6sc.co" "www.xbox.com" "www.sony.com" "rum.hlx.page"
 "www.bing.com" "xp.apple.com" "www.wowt.com" "www.apple.com" "www.intel.com" "www.tesla.com"
@@ -64,6 +64,44 @@ render_progress() {
     printf "%0.s#" $(seq 1 $filled)
     printf "%0.s-" $(seq 1 $empty)
     printf "| %3d%% (%d/%d attempts)${RESET}" "$perc" "$done" "$total"
+}
+
+print_row() {
+    local rank=$1
+    local domain=$2
+    local avg=$3
+    local min=$4
+    local max=$5
+    local succ=$6
+    local attempts=$7
+
+    # 列宽
+    local width_avg=8
+    local width_succ=8
+
+    # 格式化数字，不含颜色
+    if [ "$avg" -ge 9999999 ]; then
+        avg_fmt=$(printf "%${width_avg}s" "TIMEOUT")
+        succ_fmt=$(printf "%${width_succ}s" "0/$attempts")
+    else
+        avg_fmt=$(printf "%${width_avg}d" "$avg")
+        succ_fmt=$(printf "%${width_succ}s" "$succ/$attempts")
+    fi
+
+    # 添加颜色
+    if [ "$avg" -ge 9999999 ]; then
+        avg_disp="${RED}${avg_fmt}${RESET}"
+    else
+        avg_disp="${GREEN}${avg_fmt}${RESET}"
+    fi
+    if [ "$succ" -lt "$attempts" ]; then
+        succ_disp="${RED}${succ_fmt}${RESET}"
+    else
+        succ_disp="${GREEN}${succ_fmt}${RESET}"
+    fi
+
+    # 打印行
+    printf "%-4d %-45s %s %8d %8d %s\n" "$rank" "$domain" "$avg_disp" "$min" "$max" "$succ_disp"
 }
 
 run_test() {
@@ -125,8 +163,6 @@ run_test() {
     if [ "$num_domains" -ge 20 ] || [ "$n" -eq 0 ]; then display_limit=10; fi
 
     # ======= 打印表格 =======
-    width_avg=10
-    width_succ=10
     printf "%-4s %-45s %10s %8s %8s %10s\n" "Rank" "Domain" "Avg(ms)" "Min" "Max" "Succ/${ATTEMPTS_PER_DOMAIN}"
     printf "%-4s %-45s %10s %8s %8s %10s\n" "----" "---------------------------------------------" "--------" "----" "----" "--------"
 
@@ -134,29 +170,7 @@ run_test() {
     while IFS='|' read -r avg min max succ dom; do
         rank=$((rank+1))
         [ "$rank" -gt "$display_limit" ] && break
-
-        # 格式化列宽，不算颜色码
-        if [ "$avg" -ge 9999999 ]; then
-            avg_fmt=$(printf "%${width_avg}s" "TIMEOUT")
-            succ_fmt=$(printf "%${width_succ}s" "0/${ATTEMPTS_PER_DOMAIN}")
-        else
-            avg_fmt=$(printf "%${width_avg}d" "$avg")
-            succ_fmt=$(printf "%${width_succ}s" "$succ/$ATTEMPTS_PER_DOMAIN")
-        fi
-
-        # 添加颜色
-        if [ "$avg" -ge 9999999 ]; then
-            avg_disp="${RED}${avg_fmt}${RESET}"
-        else
-            avg_disp="${GREEN}${avg_fmt}${RESET}"
-        fi
-        if [ "$succ" -lt "$ATTEMPTS_PER_DOMAIN" ]; then
-            succ_disp="${RED}${succ_fmt}${RESET}"
-        else
-            succ_disp="${GREEN}${succ_fmt}${RESET}"
-        fi
-
-        printf "%-4d %-45s %s %8d %8d %s\n" "$rank" "$dom" "$avg_disp" "$min" "$max" "$succ_disp"
+        print_row "$rank" "$dom" "$avg" "$min" "$max" "$succ" "$ATTEMPTS_PER_DOMAIN"
     done <"$sorted"
 
     if [ "$display_limit" -lt "$num_domains" ]; then
