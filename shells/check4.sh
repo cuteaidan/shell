@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# check_domains_v3.sh
-# 交互式域名延迟测速工具 v3 — 支持可自定义尝试次数、彩色表格、循环测试
+# check_domains_v3_color_fixed.sh
+# 交互式域名延迟测速工具 v3 — 彩色表格修正版
 
 set -o errexit
 set -o pipefail
@@ -43,7 +43,7 @@ domains=(
 "downloaddispatch.itunes.apple.com"
 )
 
-# ======= 小函数 =======
+# ======= 工具函数 =======
 now_ms() {
     if date +%s%3N >/dev/null 2>&1; then
         date +%s%3N
@@ -124,13 +124,15 @@ run_test() {
     display_limit=$(( num_domains ))
     if [ "$num_domains" -ge 20 ] || [ "$n" -eq 0 ]; then display_limit=10; fi
 
-    printf "%-4s %-45s %10s %8s %8s %10s\n" "Rank" "Domain" "Avg(ms)" "Min" "Max" "Succ/3"
+    # ======= 打印表格 =======
+    printf "%-4s %-45s %10s %8s %8s %10s\n" "Rank" "Domain" "Avg(ms)" "Min" "Max" "Succ/${ATTEMPTS_PER_DOMAIN}"
     printf "%-4s %-45s %10s %8s %8s %10s\n" "----" "---------------------------------------------" "--------" "----" "----" "--------"
 
     rank=0
     while IFS='|' read -r avg min max succ dom; do
         rank=$((rank+1))
         [ "$rank" -gt "$display_limit" ] && break
+
         if [ "$avg" -ge 9999999 ]; then
             avg_disp="TIMEOUT"
             succ_disp="0/${ATTEMPTS_PER_DOMAIN}"
@@ -142,7 +144,8 @@ run_test() {
                 succ_disp="${GREEN}${succ}/${ATTEMPTS_PER_DOMAIN}${RESET}"
             fi
         fi
-        printf "%-4d %-45s %10s %8d %8d %10s\n" "$rank" "$dom" "$avg_disp" "$min" "$max" "$succ_disp"
+
+        printf "%-4d %-45s %10b %8d %8d %10b\n" "$rank" "$dom" "$avg_disp" "$min" "$max" "$succ_disp"
     done <"$sorted"
 
     if [ "$display_limit" -lt "$num_domains" ]; then
