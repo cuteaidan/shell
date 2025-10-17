@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# check_domains_v3_color_aligned.sh
-# 域名延迟测试工具 v3 — 表格对齐修复 + 输入可编辑
+# check_domains_v3_color_fixed.sh
+# 域名延迟测试工具 v3 — 颜色修复 + 表格对齐
 
 set -o errexit
 set -o pipefail
 set -o nounset
 
 # ======= ANSI 颜色定义 =======
-GREEN="\033[1;32m"
-RED="\033[1;31m"
-YELLOW="\033[1;33m"
-RESET="\033[0m"
+GREEN=$'\033[1;32m'
+RED=$'\033[1;31m'
+YELLOW=$'\033[1;33m'
+RESET=$'\033[0m'
 
 # ======= 域名列表 =======
 domains=( 
