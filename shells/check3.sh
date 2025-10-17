@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# check_domains_sorted_table_v2.sh
-# 交互式域名延迟测速工具 — 带颜色输出、进度条、循环测试
+# check_domains_v3.sh
+# 交互式域名延迟测速工具 v3 — 支持可自定义尝试次数、彩色表格、循环测试
+
 set -o errexit
 set -o pipefail
 set -o nounset
@@ -9,7 +10,6 @@ set -o nounset
 GREEN="\033[1;32m"
 RED="\033[1;31m"
 YELLOW="\033[1;33m"
-BLUE="\033[1;34m"
 RESET="\033[0m"
 
 # ======= 域名列表 =======
@@ -67,10 +67,9 @@ render_progress() {
 }
 
 run_test() {
-    local n="$1"
+    local n="$1" ATTEMPTS_PER_DOMAIN="$2"
     local unique_list=$(printf "%s\n" "${domains[@]}" | awk '!seen[$0]++')
-    local total_unique
-    total_unique=$(printf "%s\n" "$unique_list" | wc -l | tr -d ' ')
+    local total_unique=$(printf "%s\n" "$unique_list" | wc -l | tr -d ' ')
     local selected_list
 
     if [ "$n" -eq 0 ]; then
@@ -84,16 +83,14 @@ run_test() {
     fi
 
     mapfile -t domains_to_test < <(printf "%s\n" "$selected_list")
-    num_domains=${#domains_to_test[@]}
-    ATTEMPTS_PER_DOMAIN=3
-    total_attempts=$(( num_domains * ATTEMPTS_PER_DOMAIN ))
-    completed=0
-
+    local num_domains=${#domains_to_test[@]}
+    local total_attempts=$(( num_domains * ATTEMPTS_PER_DOMAIN ))
+    local completed=0
     tmpfile=$(mktemp)
     trap 'rm -f "$tmpfile"' RETURN
 
     echo
-    echo "开始测试，每个域名测试 $ATTEMPTS_PER_DOMAIN 次..."
+    echo "开始测试，每个域名测试 ${ATTEMPTS_PER_DOMAIN} 次..."
     echo
 
     for d in "${domains_to_test[@]}"; do
@@ -132,20 +129,20 @@ run_test() {
 
     rank=0
     while IFS='|' read -r avg min max succ dom; do
-        rank=$((rank + 1))
+        rank=$((rank+1))
         [ "$rank" -gt "$display_limit" ] && break
         if [ "$avg" -ge 9999999 ]; then
-            avg_disp="${RED}TIMEOUT${RESET}"
-            succ_disp="${RED}0/3${RESET}"
+            avg_disp="TIMEOUT"
+            succ_disp="0/${ATTEMPTS_PER_DOMAIN}"
         else
             avg_disp="${GREEN}${avg}${RESET}"
-            if [ "$succ" -lt 3 ]; then
-                succ_disp="${RED}${succ}/3${RESET}"
+            if [ "$succ" -lt "$ATTEMPTS_PER_DOMAIN" ]; then
+                succ_disp="${RED}${succ}/${ATTEMPTS_PER_DOMAIN}${RESET}"
             else
-                succ_disp="${GREEN}${succ}/3${RESET}"
+                succ_disp="${GREEN}${succ}/${ATTEMPTS_PER_DOMAIN}${RESET}"
             fi
         fi
-        printf "%-4d %-45s %10b %8d %8d %10b\n" "$rank" "$dom" "$avg_disp" "$min" "$max" "$succ_disp"
+        printf "%-4d %-45s %10s %8d %8d %10s\n" "$rank" "$dom" "$avg_disp" "$min" "$max" "$succ_disp"
     done <"$sorted"
 
     if [ "$display_limit" -lt "$num_domains" ]; then
@@ -159,33 +156,54 @@ run_test() {
 while true; do
     echo
     echo "=============================="
-    echo "   域名延迟测试工具 (by Moreanp)"
+    echo "   域名延迟测试工具 v3 (by Moreanp)"
     echo "=============================="
-    echo "输入测试模式："
-    echo "  1 = 10个随机域名"
-    echo "  2 = 20个随机域名"
-    echo "  a 或 all = 测试全部"
-    echo "  q 或 quit = 退出"
+    echo "选择测试模式："
+    echo "  1 = 随机 10 个域名（默认尝试 5 次）"
+    echo "  2 = 随机 20 个域名（默认尝试 3 次）"
+    echo "  a / all = 测试全部域名（默认尝试 1 次）"
+    echo "  q / quit = 退出"
     echo
     read -rp "请输入选择 (回车默认 10): " choice
 
     case "$choice" in
-        ""|1) n=10 ;;
-        2) n=20 ;;
-        a|A|all|ALL) n=0 ;;
-        q|Q|quit|QUIT) echo "再见 👋"; exit 0 ;;
-        *) echo "输入无效，默认测试10个。"; n=10 ;;
+        ""|1)
+            n=10
+            default_attempts=5
+            ;;
+        2)
+            n=20
+            default_attempts=3
+            ;;
+        a|A|all|ALL)
+            n=0
+            default_attempts=1
+            ;;
+        q|Q|quit|QUIT)
+            echo "退出程序 👋"; exit 0
+            ;;
+        *)
+            echo "输入无效，默认随机 10 个"
+            n=10
+            default_attempts=5
+            ;;
     esac
 
-    run_test "$n"
+    read -rp "请输入每个域名的测试次数 (默认 ${default_attempts}): " input_attempts
+    if [[ "$input_attempts" =~ ^[1-9][0-9]*$ ]]; then
+        ATTEMPTS_PER_DOMAIN=$input_attempts
+    else
+        ATTEMPTS_PER_DOMAIN=$default_attempts
+    fi
 
-    echo
+    run_test "$n" "$ATTEMPTS_PER_DOMAIN"
+
     while true; do
         read -rp "是否继续？(r=重新随机, 1/2/a=改模式, q=退出): " next
         case "$next" in
             r|R)
                 echo "重新随机测试..."
-                run_test "$n"
+                run_test "$n" "$ATTEMPTS_PER_DOMAIN"
                 ;;
             1|2|a|A|all|ALL)
                 choice="$next"
@@ -196,7 +214,7 @@ while true; do
                 exit 0
                 ;;
             *)
-                echo "输入无效。"
+                echo "输入无效，请重新输入。"
                 ;;
         esac
     done
