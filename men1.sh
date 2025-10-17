@@ -200,8 +200,7 @@ do_search() {
 # ====== 主循环 ======
 while true; do
   [[ "$SEARCH_MODE" -eq 0 ]] && print_page "$CURRENT_PATH" "$page"
-  printf "%b选项 (0-9 or 输入关键字搜索): %b" "$C_HINT" "$C_RESET"
-  read -r key || true
+  read -e -p "$(printf "%b选项 (0-9 or 输入关键字搜索): %b" "$C_HINT" "$C_RESET")" key || true
   [[ -z "$key" ]] && continue
   case "$key" in
     [0-9]) run_slot "$page" "$key" ;;
