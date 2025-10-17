@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ===========================================
-# 通用交互式主机名修改脚本（by Moreanp）
+# 通用交互式主机名修改脚本（最终版）
 # 支持大部分 Linux 发行版
 # ===========================================
 
@@ -10,11 +10,11 @@ set -o nounset
 
 # 自动提权
 if [ "$(id -u)" -ne 0 ]; then
-  echo "🔒 提权中..."
-  exec sudo bash "$0" "$@"
+    echo "🔒 正在提权..."
+    exec sudo bash "$0" "$@"
 fi
 
-# 获取系统类型
+# 检测系统类型
 OS=""
 if [ -f /etc/os-release ]; then
     . /etc/os-release
@@ -24,18 +24,27 @@ else
 fi
 echo "🧭 检测到系统类型: $OS"
 
-# 获取当前主机名
+# 当前主机名
 CURRENT_HOSTNAME=$(hostname)
 echo "当前主机名: $CURRENT_HOSTNAME"
 
 # 交互式输入新主机名
 while true; do
     read -rp "请输入新的主机名: " NEW_HOSTNAME
+    NEW_HOSTNAME=$(echo "$NEW_HOSTNAME" | xargs)  # 去掉首尾空格
+
     # 校验主机名合法性
-    if [[ "$NEW_HOSTNAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9\-.]{0,62}$ ]]; then
-        break
+    if [[ "$NEW_HOSTNAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}$ ]]; then
+        # 二次确认
+        read -rp "确认将主机名修改为 '$NEW_HOSTNAME' 吗？[Y/n]: " CONFIRM
+        CONFIRM=${CONFIRM:-Y}
+        if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
+            break
+        else
+            echo "请重新输入新的主机名。"
+        fi
     else
-        echo "❌ 无效主机名！只能包含字母、数字、连字符(-)、点(.)，长度不超过63。请重新输入。"
+        echo "❌ 无效主机名！只能包含字母、数字、短横线(-)、点(.)，长度不超过63个字符，请重新输入。"
     fi
 done
 
