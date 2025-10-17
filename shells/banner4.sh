@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# 一键安装 Moreanp 彩色登录 Banner（单次显示）
-# 保留原艺术字，显示 CPU/MEM/DISK/IP，修复 CPU 显示问题
+# ========================================================
+# Moreanp 彩色登录 Banner 安装脚本（单次显示）
+# ========================================================
 
 set -e
 
@@ -15,22 +16,22 @@ if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
-# =========================================================
-# 1) 生成 banner 脚本
-# =========================================================
+# ========================================================
+# 生成 banner 脚本
+# ========================================================
 cat > "$BANNER_PATH" <<'EOF'
 #!/usr/bin/env bash
 # Moreanp 彩色 Banner（单次显示）
 
-# CPU 使用率计算（读取 /proc/stat）
+# CPU 使用率（/proc/stat 方法）
 CPU=$(awk '
-    BEGIN{FS=" "}
-    NR==1 {
-        user=$2; nice=$3; system=$4; idle=$5
-        total=user+nice+system+idle
-        usage=(user+nice+system)*100/total
-        printf "%.1f%%", usage
-    }
+BEGIN {FS=" "}
+NR==1 {
+    user=$2; nice=$3; system=$4; idle=$5
+    total=user+nice+system+idle
+    usage=(user+nice+system)*100/total
+    printf "%.1f%%", usage
+}
 ' /proc/stat)
 
 # 内存使用率
@@ -62,9 +63,9 @@ EOF
 chmod +x "$BANNER_PATH"
 echo -e "\033[1;32m✅ Banner 脚本已生成：$BANNER_PATH\033[0m"
 
-# =========================================================
-# 2) 注册登录自动执行（保留 Last login）
-# =========================================================
+# ========================================================
+# 注册登录自动执行（保留 Last login）
+# ========================================================
 if ! grep -q "moreanp_banner.sh" ~/.bashrc; then
     echo -e "\n# >>> Moreanp Banner <<<" >> ~/.bashrc
     echo "bash $BANNER_PATH" >> ~/.bashrc
@@ -74,9 +75,9 @@ else
     echo -e "\033[1;33m⚠️ 登录自动显示已存在，无需重复添加\033[0m"
 fi
 
-# =========================================================
-# 3) 禁用 MOTD 与 SSH Banner
-# =========================================================
+# ========================================================
+# 禁用 MOTD 与 SSH Banner
+# ========================================================
 for f in /etc/pam.d/sshd /etc/pam.d/login; do
   [ -f "$f" ] && sudo sed -i 's/^\(session\s\+optional\s\+pam_motd.so.*\)$/# \1/' "$f"
 done
