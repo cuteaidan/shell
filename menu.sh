@@ -191,7 +191,7 @@ do_search() {
   for i in $(seq $start $end); do entry="${DISPLAY_LINES[i]}"; draw_text "${C_KEY}[$((i-start))]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"; done
   draw_mid
   draw_text "搜索结果 ${page}/${PAGES} 共 ${#DISPLAY_LINES[@]} 项"
-  draw_text "[ q ] 主菜单     [ 0-9 ] 选择"
+  draw_text "[ q ] 首页   [ 0-9 ] 选择"
   draw_bot
 }
 
