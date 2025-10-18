@@ -139,24 +139,23 @@ print_page() {
   ((TOTAL==0)) && draw_text "（该目录为空）" || \
   for i in $(seq $start $end); do
     entry="${DISPLAY_LINES[i]}"
-    local show_index=$(( (i-start+1)%10 ))
-    [[ $show_index -eq 0 ]] && show_index=0
-    [[ "$entry" == DIR:* ]] && draw_text "${C_KEY}[$show_index]${C_RESET} ${C_RUN}${entry#DIR:}${C_RESET}" || draw_text "${C_KEY}[$show_index]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
+    local shown=$(( ( (i-start+1) % 10 ) ))
+    [[ "$entry" == DIR:* ]] && draw_text "${C_KEY}[$shown]${C_RESET} ${C_RUN}${entry#DIR:}${C_RESET}" \
+      || draw_text "${C_KEY}[$shown]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
   done
   draw_mid
   draw_text "路径：${path#ROOT}"
   draw_text "[ n ] 下页   [ b ] 上页"
-  draw_text "[ q ] 上级   [1-0] 选择"
+  draw_text "[ q ] 上级   [0-9] 选择"
   draw_bot
   page=$pagev
 }
 
 # ====== 执行槽 ======
 run_slot() {
-  local key="$2"
-  local rel_index
-  if [[ "$key" == "0" ]]; then rel_index=9; else rel_index=$((key-1)); fi
-  local idx=$(( (page-1)*PER_PAGE + rel_index ))
+  local key_input="$2"
+  local offset=$(( key_input == 0 ? 9 : key_input - 1 ))
+  local idx=$(( (page-1)*PER_PAGE + offset ))
   (( idx<0 || idx>=${#DISPLAY_LINES[@]} )) && { read -rp $'X 无效选项，按回车返回...' _; return; }
   entry="${DISPLAY_LINES[$idx]}"
   if [[ "$entry" == DIR:* ]]; then push_menu_stack; CURRENT_PATH="$CURRENT_PATH/${entry#DIR:}"; page=1; return; fi
@@ -192,23 +191,22 @@ do_search() {
   page=1
 
   clear; draw_line; draw_title "脚本管理器 (搜索：$keyword)"; draw_mid
-  local start=$(( (page-1)*PER_PAGE )); local end=$(( start+PER_PAGE-1 )); ((end>=TOTAL)) && end=$((TOTAL-1))
+  local start=$(( (page-1)*PER_PAGE )); local end=$((start+PER_PAGE-1)); ((end>=TOTAL)) && end=$((TOTAL-1))
   for i in $(seq $start $end); do
-    local show_index=$(( (i-start+1)%10 ))
-    [[ $show_index -eq 0 ]] && show_index=0
     entry="${DISPLAY_LINES[i]}"
-    draw_text "${C_KEY}[$show_index]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
+    local shown=$(( ( (i-start+1) % 10 ) ))
+    draw_text "${C_KEY}[$shown]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
   done
   draw_mid
   draw_text "搜索结果 ${page}/${PAGES} 共 ${#DISPLAY_LINES[@]} 项"
-  draw_text "[ q ] 首页   [1-0] 选择"
+  draw_text "[ q ] 首页   [ 0-9 ] 选择"
   draw_bot
 }
 
 # ====== 主循环 ======
 while true; do
   [[ "$SEARCH_MODE" -eq 0 ]] && print_page "$CURRENT_PATH" "$page"
-  read -e -p "$(printf "%b选项 (1-0 或 输入关键字搜索): %b" "$C_HINT" "$C_RESET")" key || true
+  read -e -p "$(printf "%b选项 (0-9 or 输入关键字搜索): %b" "$C_HINT" "$C_RESET")" key || true
   [[ -z "$key" ]] && continue
   case "$key" in
     [0-9]) run_slot "$page" "$key" ;;
