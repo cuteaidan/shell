@@ -1,60 +1,132 @@
-#!/bin/sh
-# 安装登录后显示的彩色 Banner（仅显示 /etc/banner，禁用 MOTD）
-BANNER_FILE="/etc/banner"
-PROFILE_FILE="/etc/profile"
+#!/usr/bin/env bash
+# Cloudflare DNS Auto Updater — API Token Version
+# Compatible: Debian / Ubuntu / CentOS / Fedora / Arch / Alpine / etc.
+# Author: Moreanp
+# Usage:
+#   bash <(curl -LsSf https://raw.githubxxxxx.xxx/cf_auto_dns_token.sh) <API_TOKEN>
+#   或者直接运行（脚本会交互提示）
 
-# 1) 如果 /etc/banner 不存在，创建文件（只写静态图案，不写动态信息）
-if [ ! -f "$BANNER_FILE" ]; then
-cat > "$BANNER_FILE" <<'EOF'
-[0;1;31;91m▄[0m    [0;1;36;96m▄[0m                                          
-[0;1;33;93m█[0;1;32;92m█[0m  [0;1;36;96m█[0;1;34;94m█[0m  [0;1;35;95m▄[0;1;31;91m▄▄[0m    [0;1;36;96m▄[0m [0;1;34;94m▄▄[0m   [0;1;31;91m▄[0;1;33;93m▄▄[0m    [0;1;34;94m▄▄[0;1;35;95m▄[0m   [0;1;33;93m▄[0m [0;1;32;92m▄▄[0m   [0;1;34;94m▄[0;1;35;95m▄▄[0;1;31;91m▄[0m  
-[0;1;32;92m█[0m [0;1;36;96m█[0;1;34;94m█[0m [0;1;35;95m█[0m [0;1;31;91m█▀[0m [0;1;33;93m▀[0;1;32;92m█[0m   [0;1;34;94m█▀[0m  [0;1;31;91m▀[0m [0;1;33;93m█▀[0m  [0;1;36;96m█[0m  [0;1;34;94m▀[0m   [0;1;31;91m█[0m  [0;1;32;92m█▀[0m  [0;1;34;94m█[0m  [0;1;35;95m█[0;1;31;91m▀[0m [0;1;33;93m▀█[0m 
-[0;1;36;96m█[0m [0;1;34;94m▀[0;1;35;95m▀[0m [0;1;31;91m█[0m [0;1;33;93m█[0m   [0;1;36;96m█[0m   [0;1;35;95m█[0m     [0;1;32;92m█▀[0;1;36;96m▀▀[0;1;34;94m▀[0m  [0;1;35;95m▄[0;1;31;91m▀▀[0;1;33;93m▀█[0m  [0;1;36;96m█[0m   [0;1;35;95m█[0m  [0;1;31;91m█[0m   [0;1;32;92m█[0m 
-[0;1;34;94m█[0m    [0;1;33;93m█[0m [0;1;32;92m▀█[0;1;36;96m▄█[0;1;34;94m▀[0m   [0;1;31;91m█[0m     [0;1;36;96m▀█[0;1;34;94m▄▄[0;1;35;95m▀[0m  [0;1;31;91m▀[0;1;33;93m▄▄[0;1;32;92m▀█[0m  [0;1;34;94m█[0m   [0;1;31;91m█[0m  [0;1;33;93m█[0;1;32;92m█▄[0;1;36;96m█▀[0m 
-                                           [0;1;32;92m█[0m     
-                                           [0;1;36;96m▀[0m     
-                                             
-                                  Powered by Moreanp    
- -------------------------------------------------------
-EOF
+set -euo pipefail
+stty erase ^? 2>/dev/null || true  # 修复退格键显示 ^H 的问题
+
+# ======== 通用函数 ========
+
+check_dep() {
+  for cmd in curl jq; do
+    if ! command -v "$cmd" &>/dev/null; then
+      echo "❌ 缺少依赖：$cmd"
+      echo "正在安装..."
+      if command -v apt &>/dev/null; then
+        apt update -y && apt install -y "$cmd"
+      elif command -v yum &>/dev/null; then
+        yum install -y "$cmd"
+      elif command -v dnf &>/dev/null; then
+        dnf install -y "$cmd"
+      elif command -v apk &>/dev/null; then
+        apk add --no-cache "$cmd"
+      elif command -v pacman &>/dev/null; then
+        pacman -Sy --noconfirm "$cmd"
+      else
+        echo "请手动安装 $cmd 后再运行脚本。"
+        exit 1
+      fi
+    fi
+  done
+}
+
+get_ip() {
+  echo "🔍 正在获取公网 IP..."
+  local ip
+  ip=$(curl -s https://api.ipify.org || curl -s https://ifconfig.me || echo "")
+  if [[ -z "$ip" ]]; then
+    ip=$(curl -s https://ipv6.icanhazip.com || echo "")
+  fi
+  echo "$ip"
+}
+
+prompt_input() {
+  local var_name="$1"
+  local prompt="$2"
+  local default_value="${3:-}"
+  local input
+  if [[ -n "$default_value" ]]; then
+    read -rp "$prompt [$default_value]: " input
+    input="${input:-$default_value}"
+  else
+    read -rp "$prompt: " input
+  fi
+  echo "$input"
+}
+
+update_dns() {
+  local api_token="$1"
+  local zone_id="$2"
+  local domain="$3"
+  local subdomain="$4"
+  local ip="$5"
+
+  local record_name="${subdomain}.${domain}"
+
+  echo "🧩 正在检查 Cloudflare 记录: $record_name"
+
+  local record_info
+  record_info=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records?name=${record_name}" \
+    -H "Authorization: Bearer ${api_token}" \
+    -H "Content-Type: application/json")
+
+  local record_id
+  record_id=$(echo "$record_info" | jq -r '.result[0].id // empty')
+
+  local record_type
+  if [[ "$ip" == *:* ]]; then
+    record_type="AAAA"
+  else
+    record_type="A"
+  fi
+
+  if [[ -n "$record_id" ]]; then
+    echo "🟡 已存在记录，正在更新..."
+    curl -s -X PUT "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records/${record_id}" \
+      -H "Authorization: Bearer ${api_token}" \
+      -H "Content-Type: application/json" \
+      --data "{\"type\":\"${record_type}\",\"name\":\"${record_name}\",\"content\":\"${ip}\",\"ttl\":120,\"proxied\":false}" \
+      | jq -r '.success'
+  else
+    echo "🟢 创建新记录..."
+    curl -s -X POST "https://api.cloudflare.com/client/v4/zones/${zone_id}/dns_records" \
+      -H "Authorization: Bearer ${api_token}" \
+      -H "Content-Type: application/json" \
+      --data "{\"type\":\"${record_type}\",\"name\":\"${record_name}\",\"content\":\"${ip}\",\"ttl\":120,\"proxied\":false}" \
+      | jq -r '.success'
+  fi
+
+  echo "✅ Cloudflare 已配置完成: ${record_name} → ${ip}"
+}
+
+# ======== 主流程 ========
+
+echo "=============================="
+echo " Cloudflare DNS 自动配置工具 "
+echo "         (API Token版)         "
+echo "=============================="
+
+check_dep
+
+# 支持命令行参数传入 Token
+if [[ $# -ge 1 ]]; then
+  cf_token="$1"
+  echo "🔑 已检测到传入的 Cloudflare API Token"
+else
+  cf_token=$(prompt_input "cf_token" "请输入 Cloudflare API Token")
 fi
 
-# 2) 在 /etc/profile 添加调用逻辑（避免重复追加）
-if ! grep -q '### SHOW /etc/banner ###' "$PROFILE_FILE" 2>/dev/null; then
-cat >> "$PROFILE_FILE" <<'EOF'
+zone_id=$(prompt_input "zone_id" "请输入 Cloudflare Zone ID（你的主域名对应的）")
+domain=$(prompt_input "domain" "请输入主域名（例如 example.com）")
+subdomain=$(prompt_input "subdomain" "请输入子域名（例如 node1）")
 
-### SHOW /etc/banner ###
-# 仅交互式 shell 才显示
-if [ -n "$PS1" ]; then
-    # 显示静态 Banner 图案
-    [ -f /etc/banner ] && cat /etc/banner
+ip_now=$(get_ip)
+ip=$(prompt_input "ip" "请输入要解析到的 IP" "$ip_now")
 
-    # 动态信息：CPU、内存、硬盘占用、公网 IP（彩色显示）
-    CPU_INFO=$(awk -F: '/model name/ {print $2; exit}' /proc/cpuinfo | sed 's/^ //')
-    MEM_INFO=$(free -h | awk '/^Mem:/ {print $3 "/" $2}')
-    DISK_INFO=$(df -h / | awk 'NR==2 {print $3 "/" $2}')
-    PUB_IP=$(curl -s4 ifconfig.me || echo "N/A")
+update_dns "$cf_token" "$zone_id" "$domain" "$subdomain" "$ip"
 
-    echo -e " \033[1;33mCPU:\033[0m \033[1;36m$CPU_INFO\033[0m | \033[1;33mMEM:\033[0m \033[1;32m$MEM_INFO\033[0m | \033[1;33mDISK:\033[0m \033[1;34m$DISK_INFO\033[0m | \033[1;33mIP:\033[0m \033[1;35m$PUB_IP\033[0m"
-    echo -e " \033[1;36m-------------------------------------------------------\033[0m"
-fi
-### END SHOW /etc/banner ###
-
-EOF
-fi
-
-# 3) 禁用 MOTD（Ubuntu 特有）
-# 注释 pam_motd 调用
-if [ -f /etc/pam.d/sshd ]; then
-    sed -i 's/^\(session\s\+optional\s\+pam_motd.so.*\)$/# \1/' /etc/pam.d/sshd
-fi
-if [ -f /etc/pam.d/login ]; then
-    sed -i 's/^\(session\s\+optional\s\+pam_motd.so.*\)$/# \1/' /etc/pam.d/login
-fi
-
-# 禁用 update-motd.d 脚本执行权限
-if [ -d /etc/update-motd.d ]; then
-    chmod -x /etc/update-motd.d/*
-fi
-
-echo "✅彩色Banner已配置完成（每次登录动态显示系统信息，已屏蔽 Ubuntu MOTD）"
+echo "🎉 完成！请到 Cloudflare 控制台查看记录是否生效。"
