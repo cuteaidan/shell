@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cloudflare DNS Auto Updater — Token + ZoneID + Domain + Subdomain
+# Cloudflare DNS Auto Updater — Token + ZoneID + Domain + Subdomain (IP-based default)
 # Usage:
 #   bash cf_dns_auto.sh [arg1] [arg2] [arg3] [arg4]
 # Args can be in any order: token, zone_id, domain, subdomain
@@ -100,8 +100,7 @@ if [[ ${#args[@]} -ge 3 ]]; then
   echo "  Token:  ${cand_token:-<未识别>}"
   echo "  ZoneID: ${cand_zone:-<未识别>}"
   echo "  Domain: ${cand_domain:-<未识别>}"
-  echo "按 回车 接受识别结果并继续；输入 n 然后回车 以手动重新输入。"
-  read -r -n1 -s -p "确认? (Enter=接受, n=重新输入) " CONF
+  read -r -n1 -s -p "按回车接受识别结果，输入 n 重新输入: " CONF
   echo
   if [[ "$CONF" == "n" || "$CONF" == "N" ]]; then
     cand_token="$(prompt "请输入 API Token")"
@@ -115,8 +114,41 @@ fi
 [[ -z "$cand_zone" ]] && cand_zone="$(prompt "请输入 Zone ID")"
 [[ -z "$cand_domain" ]] && cand_domain="$(prompt "请输入 主域名 (eg. example.com)")"
 
-# 提示第四个参数（子域名）
-[[ -z "$cand_sub" ]] && cand_sub="$(prompt "请输入需要解析的子域名 (eg. node1)")"
+# --------------------- check deps ---------------------
+check_deps
+
+# --------------------- get and confirm IP ---------------------
+while true; do
+  IP="$(get_ip)"
+  if [[ -n "$IP" ]]; then
+    read -rp "检测到公网 IP 为 ${IP}，按回车确认或输入新的 IP: " input_ip
+    input_ip="${input_ip:-$IP}"
+  else
+    input_ip="$(prompt "无法检测到公网 IP，请输入 IP")"
+  fi
+
+  # IP 校验 (IPv4 或 IPv6)
+  if [[ "$input_ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || [[ "$input_ip" =~ ^([0-9a-fA-F:]+)$ ]]; then
+    IP="$input_ip"
+    break
+  else
+    echo "输入不是合法的 IP，请重新输入。"
+  fi
+done
+
+# --------------------- default subdomain ---------------------
+if [[ -z "$cand_sub" ]]; then
+  default_sub="${IP//./-}"
+  read -rp "默认子域名为 ${default_sub} ，输入 y 使用，输入其它自定义: " sub_input
+  if [[ "$sub_input" == "y" || "$sub_input" == "Y" ]]; then
+    cand_sub="$default_sub"
+  else
+    cand_sub="$sub_input"
+    while [[ -z "$cand_sub" ]]; do
+      cand_sub="$(prompt "子域名不能为空，请输入需要解析的子域名")"
+    done
+  fi
+fi
 
 # --------------------- final values ---------------------
 CF_TOKEN="$cand_token"
@@ -124,16 +156,6 @@ ZONE_ID="$cand_zone"
 DOMAIN="$cand_domain"
 SUBDOMAIN="$cand_sub"
 FULL_NAME="${SUBDOMAIN}.${DOMAIN}"
-
-# --------------------- check deps ---------------------
-check_deps
-
-# --------------------- get IP ---------------------
-IP="$(get_ip)"
-if [[ -z "$IP" ]]; then
-  IP="$(prompt "无法获取公网 IP，请手动输入 IP")"
-  [[ -z "$IP" ]] && echo "未提供 IP，退出" && exit 1
-fi
 
 echo "🌐 将把 ${FULL_NAME} 解析到 ${IP} (ZoneID: ${ZONE_ID})"
 
