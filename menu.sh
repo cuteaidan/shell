@@ -163,7 +163,7 @@ print_page() {
   for i in $(seq $start $end); do
     entry="${DISPLAY_LINES[i]}"
     local shown=$(( ( (i-start+1) % 10 ) ))
-    [[ "$entry" == DIR:* ]] && draw_text "${C_KEY}[$shown]${C_RESET} ${C_RUN}>${entry#DIR:}${C_RESET}" \
+    [[ "$entry" == DIR:* ]] && draw_text "${C_KEY}[$shown]${C_RESET} ${C_RUN}${entry#DIR:}${C_RESET}" \
       || draw_text "${C_KEY}[$shown]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
   done
   draw_mid
