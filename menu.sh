@@ -16,7 +16,7 @@ fi
 
 # ====== 配置部分 ======
 CONFIG_URL="${CONFIG_URL:-https://raw.githubusercontent.com/cuteaidan/shell/refs/heads/main/scripts.conf}"
-BACKUP_URL=${CONFIG_URL:-https://raw.eaidan.com/cuteaidan/shell/refs/heads/main/scripts.conf}"
+BACKUP_URL="https://raw.eaidan.com/cuteaidan/shell/refs/heads/main/scripts.conf"
 PER_PAGE=10
 BOX_WIDTH=41
 LEFT_INDENT="        "
@@ -24,7 +24,7 @@ LEFT_INDENT="        "
 TMP_CONF="$(mktemp -t menu_conf.XXXXXX)"
 trap 'rm -f "$TMP_CONF"' EXIT
 
-# ====== 下载配置（新增备用源机制） ======
+# ====== 下载配置 ======
 download_conf() {
   local url="$1"
   if command -v curl >/dev/null 2>&1; then
@@ -48,24 +48,14 @@ fi
 
 # ====== 色彩定义 ======
 C_RESET="\033[0m"
-# 颜色终止符
 C_BOX="\033[1;38;5;51m"
-# 外边框 亮浅蓝
 C_TITLE="\033[1;38;5;220m"
-# 标题 金黄
 C_KEY="\033[1;32m"
-# 关键字、成功提示 亮绿色
 C_HINT="\033[1;32m"
-# 输入提示信息 亮绿色
 C_DIV="\033[38;5;240m"
-# 分隔线 灰色低饱和度
 C_EXEC="\033[1;32m"
-# 执行动作提示色 亮绿色
 C_RUN="\033[38;5;201m"
-#文件夹 洋红
 C_WARN="\033[1;33m"
-# 警告/注意颜色亮黄色
-
 
 # ====== 宽度计算 ======
 str_width() {
@@ -149,23 +139,30 @@ pop_menu_stack() {
 print_page() {
   local path="$1" pagev="$2"
   DISPLAY_LINES=()
-  for key in "${!CHILDREN[@]}"; do
+  mapfile -t sorted_keys < <(printf '%s\n' "${!CHILDREN[@]}" | sort)
+  for key in "${sorted_keys[@]}"; do
     [[ "$key" == "$path"/* ]] && sub="${key#$path/}" && [[ "$sub" != */* ]] && DISPLAY_LINES+=("DIR:$sub")
   done
   [[ -n "${CHILDREN[$path]:-}" ]] && while IFS= read -r line || [ -n "$line" ]; do [[ -n "$line" ]] && DISPLAY_LINES+=("$line"); done <<< "${CHILDREN[$path]}"
-  TOTAL=${#DISPLAY_LINES[@]}
-  PAGES=$((TOTAL ? (TOTAL+PER_PAGE-1)/PER_PAGE : 1))
+  local TOTAL=${#DISPLAY_LINES[@]}
+  local PAGES=$((TOTAL ? (TOTAL+PER_PAGE-1)/PER_PAGE : 1))
   ((pagev>PAGES)) && pagev=1
 
   clear; draw_line; draw_title "脚本管理器 (by Moreanp)"; draw_mid
-  local start=$(( (pagev-1)*PER_PAGE )); local end=$(( start+PER_PAGE-1 )); ((end>=TOTAL)) && end=$((TOTAL-1))
-  ((TOTAL==0)) && draw_text "（该目录为空）" || \
-  for i in $(seq $start $end); do
-    entry="${DISPLAY_LINES[i]}"
-    local shown=$(( ( (i-start+1) % 10 ) ))
-    [[ "$entry" == DIR:* ]] && draw_text "${C_KEY}[$shown]${C_RESET} ${C_RUN}${entry#DIR:}${C_RESET}" \
-      || draw_text "${C_KEY}[$shown]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
-  done
+  local start=$(( (pagev-1)*PER_PAGE ))
+  local end=$(( start+PER_PAGE-1 ))
+  (( end >= TOTAL )) && end=$(( TOTAL - 1 ))
+
+  if (( TOTAL == 0 )); then
+    draw_text "（该目录为空）"
+  else
+    for i in $(seq $start $end); do
+      entry="${DISPLAY_LINES[i]}"
+      local shown=$(( ( (i-start+1) % 10 ) ))
+      [[ "$entry" == DIR:* ]] && draw_text "${C_KEY}[$shown]${C_RESET} ${C_RUN}${entry#DIR:}${C_RESET}" \
+        || draw_text "${C_KEY}[$shown]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
+    done
+  fi
   draw_mid
   draw_text "路径：${path#ROOT}"
   draw_text "[ n ] 下页   [ b ] 上页"
@@ -176,21 +173,41 @@ print_page() {
 
 # ====== 执行槽 ======
 run_slot() {
-  local key_input="$2"
+  local page="$1" key_input="$2"
   local offset=$(( key_input == 0 ? 9 : key_input - 1 ))
   local idx=$(( (page-1)*PER_PAGE + offset ))
   (( idx<0 || idx>=${#DISPLAY_LINES[@]} )) && { read -rp $'X 无效选项，按回车返回...' _; return; }
-  entry="${DISPLAY_LINES[$idx]}"
-  if [[ "$entry" == DIR:* ]]; then push_menu_stack; CURRENT_PATH="$CURRENT_PATH/${entry#DIR:}"; page=1; return; fi
 
-  name="${entry%%|*}"; rest="${entry#*|}"; cmd="${rest%%|*}"; args=""; [[ "$rest" == *"|"* ]] && args="${rest#*|}"
-  clear; echo -e "${C_KEY}→ 正在执行：${C_EXEC}${name}${C_RESET}"; echo -e "${C_DIV}-----------------------------------------${C_RESET}"
-  if [[ "$cmd" =~ ^CMD: ]]; then eval "${cmd#CMD:} ${args}"
+  local entry="${DISPLAY_LINES[$idx]}"
+  if [[ "$entry" == DIR:* ]]; then
+    push_menu_stack
+    CURRENT_PATH="$CURRENT_PATH/${entry#DIR:}"
+    page=1
+    return
+  fi
+
+  local name="${entry%%|*}"
+  local rest="${entry#*|}"
+  local cmd="${rest%%|*}"
+  local args=""; [[ "$rest" == *"|"* ]] && args="${rest#*|}"
+
+  clear; echo -e "${C_KEY}→ 正在执行：${C_EXEC}${name}${C_RESET}"
+  echo -e "${C_DIV}-----------------------------------------${C_RESET}"
+
+  # 执行前确认
+  read -rp "确定执行 [$name]? [y/N] " confirm
+  [[ "$confirm" =~ ^[Yy]$ ]] || return
+
+  if [[ "$cmd" =~ ^CMD: ]]; then
+    eval "${cmd#CMD:} ${args}"
   elif [[ "$cmd" =~ ^https?:// ]]; then
     if command -v curl >/dev/null 2>&1; then bash <(curl -fsSL "$cmd") ${args:+$args}
     elif command -v wget >/dev/null 2>&1; then bash <(wget -qO- "$cmd") ${args:+$args}
     else echo "X 系统未安装 curl 或 wget"; fi
-  else eval "$cmd ${args}"; fi
+  else
+    eval "$cmd ${args}"
+  fi
+
   echo -e "${C_DIV}-----------------------------------------${C_RESET}"
   read -rp $'按回车返回菜单...' _
 }
@@ -198,32 +215,62 @@ run_slot() {
 # ====== 搜索 ======
 do_search() {
   [[ -z "$1" ]] && return
-  local keyword="$1"; local lc_kw=$(echo "$keyword" | tr '[:upper:]' '[:lower:]')
+  local keyword="$1"
+  local lc_kw=$(echo "$keyword" | tr '[:upper:]' '[:lower:]')
   SEARCH_RESULTS=()
   for key in "${!ITEMS[@]}"; do
-    name="${key##*/}"; lc_key=$(echo "$name" | tr '[:upper:]' '[:lower:]')
+    local name="${key##*/}"
+    local lc_key=$(echo "$name" | tr '[:upper:]' '[:lower:]')
     [[ "$lc_key" == *"$lc_kw"* ]] && SEARCH_RESULTS+=("${ITEMS[$key]}")
   done
-  (( ${#SEARCH_RESULTS[@]} == 0 )) && { echo -e "${C_WARN}! 未找到匹配: '$keyword'${C_RESET}"; read -rp $'按回车返回...' _; return; }
+
+  if (( ${#SEARCH_RESULTS[@]} == 0 )); then
+    echo -e "${C_WARN}! 未找到匹配: '$keyword'${C_RESET}"
+    read -rp $'按回车返回...' _
+    return
+  fi
 
   SEARCH_MODE=1
   CURRENT_PATH="__SEARCH__/$keyword"
   DISPLAY_LINES=("${SEARCH_RESULTS[@]}")
-  TOTAL=${#DISPLAY_LINES[@]}
-  PAGES=$(( (TOTAL+PER_PAGE-1)/PER_PAGE ))
+  local TOTAL=${#DISPLAY_LINES[@]}
+  local PAGES=$(( (TOTAL+PER_PAGE-1)/PER_PAGE ))
   page=1
 
-  clear; draw_line; draw_title "脚本管理器 (搜索：$keyword)"; draw_mid
-  local start=$(( (page-1)*PER_PAGE )); local end=$((start+PER_PAGE-1)); ((end>=TOTAL)) && end=$((end-1))
-  for i in $(seq $start $end); do
-    entry="${DISPLAY_LINES[i]}"
-    local shown=$(( ( (i-start+1) % 10 ) ))
-    draw_text "${C_KEY}[$shown]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
+  while true; do
+    clear; draw_line; draw_title "脚本管理器 (搜索：$keyword)"; draw_mid
+    local start=$(( (page-1)*PER_PAGE ))
+    local end=$(( start+PER_PAGE-1 ))
+    (( end >= TOTAL )) && end=$(( TOTAL - 1 ))
+
+    for i in $(seq $start $end); do
+      local entry="${DISPLAY_LINES[i]}"
+      local shown=$(( ( (i-start+1) % 10 ) ))
+      draw_text "${C_KEY}[$shown]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
+    done
+
+    draw_mid
+    draw_text "搜索结果 ${page}/${PAGES} 共 ${#DISPLAY_LINES[@]} 项"
+    draw_text "[ q ] 首页   [ 0-9 ] 选择"
+    draw_bot
+
+    read -e -p "$(printf "%b选项: %b" "$C_HINT" "$C_RESET")" key || true
+    [[ -z "$key" ]] && continue
+    case "$key" in
+      [0-9]) run_slot "$page" "$key" ;;
+      n|N) ((page<PAGES)) && ((page++)) || { echo "已是最后一页"; read -rp $'按回车返回...' _; } ;;
+      b|B) ((page>1)) && ((page--)) || { echo "已是第一页"; read -rp $'按回车返回...' _; } ;;
+      q|Q)
+        SEARCH_MODE=0
+        CURRENT_PATH="ROOT"
+        MENU_STACK=()
+        DISPLAY_LINES=()
+        page=1
+        break
+        ;;
+      *) do_search "$key" ;;
+    esac
   done
-  draw_mid
-  draw_text "搜索结果 ${page}/${PAGES} 共 ${#DISPLAY_LINES[@]} 项"
-  draw_text "[ q ] 首页   [ 0-9 ] 选择"
-  draw_bot
 }
 
 # ====== 主循环 ======
@@ -235,17 +282,7 @@ while true; do
     [0-9]) run_slot "$page" "$key" ;;
     n|N) ((page<PAGES)) && ((page++)) || { echo "已是最后一页"; read -rp $'按回车返回...' _; } ;;
     b|B) ((page>1)) && ((page--)) || { echo "已是第一页"; read -rp $'按回车返回...' _; } ;;
-    q|Q)
-      if [[ "$SEARCH_MODE" -eq 1 ]]; then
-        SEARCH_MODE=0
-        CURRENT_PATH="ROOT"
-        MENU_STACK=()
-        page=1
-      else
-        pop_menu_stack
-      fi
-      DISPLAY_LINES=()
-      ;;
+    q|Q) pop_menu_stack ;;
     *) do_search "$key" ;;
   esac
 done
