@@ -5,12 +5,12 @@ set -o nounset
 
 # ====== 自动提权 ======
 if [ "$(id -u)" -ne 0 ]; then
-  echo -e "\033[1;33m! 检测到当前用户不是 root。\033[0m"
+  echo -e "\033[1;33m! Current user is not root.\033[0m"
   if ! command -v sudo >/dev/null 2>&1; then
-    echo -e "\033[1;31mX 系统未安装 sudo，请使用 root 用户运行本脚本。\033[0m"
+    echo -e "\033[1;31mX sudo not installed. Please run as root.\033[0m"
     exit 1
   fi
-  echo -e "\033[1;32m🔑 请输入密码以获取管理员权限（sudo）...\033[0m"
+  echo -e "\033[1;32m🔑 Please enter password to gain admin privileges...\033[0m"
   exec sudo -E bash "$0" "$@"
 fi
 
@@ -32,16 +32,16 @@ download_conf() {
   elif command -v wget >/dev/null 2>&1; then
     wget -qO "$TMP_CONF" "$url"
   else
-    echo "X 系统未安装 curl 或 wget"
+    echo "X curl or wget not installed"
     exit 1
   fi
 }
 
-echo -e "\033[1;34m⏳ 正在加载远程配置...\033[0m"
+echo -e "\033[1;34m⏳ Loading remote configuration...\033[0m"
 if ! download_conf "$CONFIG_URL"; then
-  echo -e "\033[1;33m! 主源下载失败，尝试备用源...\033[0m"
+  echo -e "\033[1;33m! Main source failed, trying backup...\033[0m"
   if ! download_conf "$BACKUP_URL"; then
-    echo -e "\033[1;31mX 无法下载配置文件，请检查网络连接。\033[0m"
+    echo -e "\033[1;31mX Cannot download configuration. Check network.\033[0m"
     exit 1
   fi
 fi
@@ -148,10 +148,8 @@ print_page() {
   local PAGES=$((TOTAL ? (TOTAL+PER_PAGE-1)/PER_PAGE : 1))
   ((pagev>PAGES)) && pagev=1
 
-  clear; draw_line; draw_title "Shells Manager (by Moreanp)"; draw_mid
-  local start=$(( (pagev-1)*PER_PAGE ))
-  local end=$(( start+PER_PAGE-1 ))
-  (( end >= TOTAL )) && end=$(( TOTAL - 1 ))
+  clear; draw_line; draw_title "Script Manager (by Moreanp)"; draw_mid
+  local start=$(( (pagev-1)*PER_PAGE )); local end=$(( start+PER_PAGE-1 )); (( end>=TOTAL )) && end=$(( TOTAL-1 ))
 
   if (( TOTAL == 0 )); then
     draw_text "（该目录为空）"
@@ -159,14 +157,14 @@ print_page() {
     for i in $(seq $start $end); do
       entry="${DISPLAY_LINES[i]}"
       local shown=$(( ( (i-start+1) % 10 ) ))
-      [[ "$entry" == DIR:* ]] && draw_text "${C_KEY}[$shown]${C_RESET} ${C_RUN}▷${entry#DIR:}${C_RESET}" \
+      [[ "$entry" == DIR:* ]] && draw_text "${C_KEY}[$shown]${C_RESET} ${C_RUN}${entry#DIR:}${C_RESET}" \
         || draw_text "${C_KEY}[$shown]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
     done
   fi
   draw_mid
-  draw_text "路径：${path#ROOT}"
-  draw_text "[ n ] 下页   [ b ] 上页"
-  draw_text "[ q ] 上级   [0-9] 选择"
+  draw_text "Path: ${path#ROOT}"
+  draw_text "[ n ] Next Page   [ b ] Previous Page"
+  draw_text "[ q ] Back / Quit   [0-9] Select"
   draw_bot
   page=$pagev
 }
@@ -176,7 +174,7 @@ run_slot() {
   local page="$1" key_input="$2"
   local offset=$(( key_input == 0 ? 9 : key_input - 1 ))
   local idx=$(( (page-1)*PER_PAGE + offset ))
-  (( idx<0 || idx>=${#DISPLAY_LINES[@]} )) && { read -rp $'X 无效选项，按回车返回...' _; return; }
+  (( idx<0 || idx>=${#DISPLAY_LINES[@]} )) && { read -rp $'X Invalid option, press Enter to return...' _; return; }
 
   local entry="${DISPLAY_LINES[$idx]}"
   if [[ "$entry" == DIR:* ]]; then
@@ -191,15 +189,15 @@ run_slot() {
   local cmd="${rest%%|*}"
   local args=""; [[ "$rest" == *"|"* ]] && args="${rest#*|}"
 
-  clear; echo -e "${C_KEY}→ 正在执行：${C_EXEC}${name}${C_RESET}"
+  clear; echo -e "${C_KEY}→ Running: ${C_EXEC}${name}${C_RESET}"
   echo -e "${C_DIV}-----------------------------------------${C_RESET}"
 
   # 执行前确认，默认 Y
-  read -rp "确定执行 [$name]? [Y/n] " confirm
+  read -rp "Confirm execution [$name]? [Y/n] " confirm
   confirm=${confirm:-Y}
   if [[ "$confirm" =~ ^[Nn]$ ]]; then
-      echo "已取消执行 [$name]"
-      read -rp $'按回车返回菜单...' _
+      echo "Execution cancelled [$name]"
+      read -rp $'Press Enter to return...' _
       return
   fi
 
@@ -209,13 +207,13 @@ run_slot() {
   elif [[ "$cmd" =~ ^https?:// ]]; then
     if command -v curl >/dev/null 2>&1; then bash <(curl -fsSL "$cmd") ${args:+$args}
     elif command -v wget >/dev/null 2>&1; then bash <(wget -qO- "$cmd") ${args:+$args}
-    else echo "X 系统未安装 curl 或 wget"; fi
+    else echo "X curl or wget not installed"; fi
   else
     eval "$cmd ${args}"
   fi
 
   echo -e "${C_DIV}-----------------------------------------${C_RESET}"
-  read -rp $'按回车返回菜单...' _
+  read -rp $'Press Enter to return...' _
 }
 
 # ====== 搜索 ======
@@ -231,8 +229,8 @@ do_search() {
   done
 
   if (( ${#SEARCH_RESULTS[@]} == 0 )); then
-    echo -e "${C_WARN}! 未找到匹配: '$keyword'${C_RESET}"
-    read -rp $'按回车返回...' _
+    echo -e "${C_WARN}! No match found: '$keyword'${C_RESET}"
+    read -rp $'Press Enter to return...' _
     return
   fi
 
@@ -243,7 +241,7 @@ do_search() {
   local PAGES=$(( (TOTAL+PER_PAGE-1)/PER_PAGE ))
   page=1
 
-  clear; draw_line; draw_title "Shells Manager (scan：$keyword)"; draw_mid
+  clear; draw_line; draw_title "Script Manager (Search: $keyword)"; draw_mid
   local start=$(( (page-1)*PER_PAGE )); local end=$((start+PER_PAGE-1)); ((end>=TOTAL)) && end=$((TOTAL-1))
   for i in $(seq $start $end); do
     local entry="${DISPLAY_LINES[i]}"
@@ -251,20 +249,20 @@ do_search() {
     draw_text "${C_KEY}[$shown]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
   done
   draw_mid
-  draw_text "搜索结果 ${page}/${PAGES} 共 ${#DISPLAY_LINES[@]} 项"
-  draw_text "[ q ] 首页   [ 0-9 ] 选择"
+  draw_text "Search results ${page}/${PAGES}, total ${#DISPLAY_LINES[@]}"
+  draw_text "[ q ] Back   [0-9] Select"
   draw_bot
 }
 
 # ====== 主循环 ======
 while true; do
   [[ "$SEARCH_MODE" -eq 0 ]] && print_page "$CURRENT_PATH" "$page"
-  read -e -p "$(printf "%b选项 (0-9 or 输入关键字搜索): %b" "$C_HINT" "$C_RESET")" key || true
+  read -e -p "$(printf "%bOption (0-9 or keyword search): %b" "$C_HINT" "$C_RESET")" key || true
   [[ -z "$key" ]] && continue
   case "$key" in
     [0-9]) run_slot "$page" "$key" ;;
-    n|N) ((page<PAGES)) && ((page++)) || { echo "已是最后一页"; read -rp $'按回车返回...' _; } ;;
-    b|B) ((page>1)) && ((page--)) || { echo "已是第一页"; read -rp $'按回车返回...' _; } ;;
+    n|N) ((page<PAGES)) && ((page++)) || { echo "Already last page"; read -rp $'Press Enter to return...' _; } ;;
+    b|B) ((page>1)) && ((page--)) || { echo "Already first page"; read -rp $'Press Enter to return...' _; } ;;
     q|Q)
       if [[ "$SEARCH_MODE" -eq 1 ]]; then
         SEARCH_MODE=0
@@ -272,7 +270,14 @@ while true; do
         MENU_STACK=()
         page=1
       else
-        pop_menu_stack
+        read -rp "Confirm exit Script Manager? [Y/n] " exit_confirm
+        exit_confirm=${exit_confirm:-Y}
+        if [[ "$exit_confirm" =~ ^[Yy]$ ]]; then
+            echo "Exiting Script Manager..."
+            exit 0
+        else
+            continue
+        fi
       fi
       DISPLAY_LINES=()
       ;;
