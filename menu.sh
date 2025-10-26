@@ -164,7 +164,7 @@ print_page() {
   draw_mid
   draw_text "Path: ${path#ROOT}"
   draw_text "[ n ] Next   [ b ] Prev"
-  draw_text "[ q ] Back / Quit   [0-9] Select"
+  draw_text "[ q ] Back   [0-9] Sele"
   draw_bot
   page=$pagev
 }
