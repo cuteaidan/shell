@@ -1,101 +1,137 @@
 #!/bin/bash
-# ==============================================
-# SOCKS5 全局代理管理脚本
-# 兼容大多数 Linux 发行版（Ubuntu / Debian / CentOS / Arch）
-# by Aidan & GPT-5
-# ==============================================
+# =========================================
+# 自动生成重装命令的启动脚本
+# 支持交互式选择系统、版本号及常用参数
+# =========================================
 
-ENV_FILE="/etc/environment"
-TMP_FILE="/tmp/proxy_env"
+# 可选操作系统列表（可扩展）
+OS_LIST=(
+"Alpine"
+"Debian"
+"Kali"
+"Ubuntu"
+"Anolis"
+"RHEL/AlmaLinux/Rocky/Oracle"
+"OpenCloudOS"
+"CentOS Stream"
+"Fedora"
+"openEuler"
+"openSUSE"
+"NixOS"
+"Arch"
+"Gentoo"
+"AOSC"
+"fnOS"
+"Windows (DD)"
+"Windows (ISO)"
+)
 
-# 颜色定义
-GREEN="\033[1;32m"
-RED="\033[1;31m"
-YELLOW="\033[1;33m"
-BLUE="\033[1;34m"
-NC="\033[0m"
+# 系统版本映射
+declare -A OS_VERSIONS
+OS_VERSIONS["Alpine"]="3.19 3.20 3.21 3.22"
+OS_VERSIONS["Debian"]="9 10 11 12 13"
+OS_VERSIONS["Kali"]="rolling"
+OS_VERSIONS["Ubuntu"]="16.04 18.04 20.04 22.04 24.04 25.10"
+OS_VERSIONS["Anolis"]="7 8 23"
+OS_VERSIONS["RHEL/AlmaLinux/Rocky/Oracle"]="8 9 10"
+OS_VERSIONS["OpenCloudOS"]="8 9 23"
+OS_VERSIONS["CentOS Stream"]="9 10"
+OS_VERSIONS["Fedora"]="41 42"
+OS_VERSIONS["openEuler"]="20.03 22.03 24.03 25.09"
+OS_VERSIONS["openSUSE"]="15.6 16.0 tumbleweed"
+OS_VERSIONS["NixOS"]="25.05"
+OS_VERSIONS["Arch"]="rolling"
+OS_VERSIONS["Gentoo"]="rolling"
+OS_VERSIONS["AOSC"]="rolling"
+OS_VERSIONS["fnOS"]="public"
+OS_VERSIONS["Windows (DD)"]="any"
+OS_VERSIONS["Windows (ISO)"]="Vista 7 8.x 10 11 Server"
 
-# 显示当前代理状态
-show_status() {
-    echo -e "\n${BLUE}当前代理状态：${NC}"
-    echo "----------------------------------"
-    echo "临时代理:"
-    echo "  http_proxy=$http_proxy"
-    echo "  https_proxy=$https_proxy"
-    echo "  all_proxy=$all_proxy"
-    echo
-    echo "永久代理(来自 /etc/environment):"
-    grep -E "http_proxy|https_proxy|all_proxy" "$ENV_FILE" 2>/dev/null || echo "  无"
-    echo "----------------------------------"
-}
-
-# 设置临时代理
-set_temp_proxy() {
-    read -p "请输入 SOCKS5 代理 IP (例如 127.0.0.1): " ip
-    read -p "请输入 SOCKS5 端口 (例如 1080): " port
-
-    export http_proxy="socks5h://$ip:$port"
-    export https_proxy="socks5h://$ip:$port"
-    export all_proxy="socks5h://$ip:$port"
-
-    echo "http_proxy=$http_proxy" > $TMP_FILE
-    echo "https_proxy=$https_proxy" >> $TMP_FILE
-    echo "all_proxy=$all_proxy" >> $TMP_FILE
-
-    echo -e "${GREEN}✅ 临时代理已启用: socks5h://$ip:$port${NC}"
-}
-
-# 关闭临时代理
-unset_temp_proxy() {
-    unset http_proxy https_proxy all_proxy
-    rm -f $TMP_FILE
-    echo -e "${YELLOW}🟡 临时代理已关闭${NC}"
-}
-
-# 设置永久代理
-set_perm_proxy() {
-    read -p "请输入 SOCKS5 代理 IP (例如 127.0.0.1): " ip
-    read -p "请输入 SOCKS5 端口 (例如 1080): " port
-
-    sudo sed -i '/http_proxy\|https_proxy\|all_proxy/d' "$ENV_FILE"
-    {
-        echo "http_proxy=\"socks5h://$ip:$port\""
-        echo "https_proxy=\"socks5h://$ip:$port\""
-        echo "all_proxy=\"socks5h://$ip:$port\""
-    } | sudo tee -a "$ENV_FILE" >/dev/null
-
-    echo -e "${GREEN}✅ 永久代理已写入 /etc/environment${NC}"
-    echo "请注销或重新登录后生效。"
-}
-
-# 关闭永久代理
-unset_perm_proxy() {
-    sudo sed -i '/http_proxy\|https_proxy\|all_proxy/d' "$ENV_FILE"
-    echo -e "${YELLOW}🟡 永久代理已从 /etc/environment 移除${NC}"
-}
-
-# 菜单主界面
-while true; do
-    clear
-    echo -e "${GREEN}╔════════════════════════════════════╗"
-    echo -e "║       SOCKS5 全局代理管理器        ║"
-    echo -e "╠════════════════════════════════════╣"
-    echo -e "║ [1] 设置临时代理 (当前终端有效)    ║"
-    echo -e "║ [2] 关闭临时代理                   ║"
-    echo -e "║ [3] 设置永久代理 (全系统有效)      ║"
-    echo -e "║ [4] 关闭永久代理                   ║"
-    echo -e "║ [5] 查看当前代理状态               ║"
-    echo -e "║ [0] 退出                           ║"
-    echo -e "╚════════════════════════════════════╝${NC}"
-    read -p "请选择操作 [0-5]: " choice
-
-    case "$choice" in
-        1) set_temp_proxy ;;
-        2) unset_temp_proxy ;;
-        3) set_perm_proxy ;;
-        4) unset_perm_proxy ;;
-        5) show_status; read -p "按回车键继续..." ;;
-        0) echo "退出..."; exit 0 ;;
-        *) echo "无效选项，请重试。"; sleep 1 ;;
-    esac
+# ===========================
+# 交互式选择系统
+# ===========================
+echo "请选择要安装的操作系统:"
+for i in "${!OS_LIST[@]}"; do
+    echo "$((i+1)). ${OS_LIST[i]}"
 done
+read -p "输入序号: " os_choice
+
+if ! [[ "$os_choice" =~ ^[0-9]+$ ]] || [ "$os_choice" -lt 1 ] || [ "$os_choice" -gt "${#OS_LIST[@]}" ]; then
+    echo "无效输入，退出"
+    exit 1
+fi
+
+OS_NAME="${OS_LIST[$((os_choice-1))]}"
+echo "已选择: $OS_NAME"
+
+# ===========================
+# 交互式选择版本号（如果有多个）
+# ===========================
+VERSIONS=${OS_VERSIONS[$OS_NAME]}
+VERSION=""
+if [ "$VERSIONS" != "public" ] && [ "$VERSIONS" != "any" ] && [ "$VERSIONS" != "rolling" ]; then
+    VERSION_ARRAY=($VERSIONS)
+    echo "请选择版本号:"
+    for i in "${!VERSION_ARRAY[@]}"; do
+        echo "$((i+1)). ${VERSION_ARRAY[i]}"
+    done
+    read -p "输入序号（回车选择最新）: " ver_choice
+    if [[ "$ver_choice" =~ ^[0-9]+$ ]] && [ "$ver_choice" -ge 1 ] && [ "$ver_choice" -le "${#VERSION_ARRAY[@]}" ]; then
+        VERSION="${VERSION_ARRAY[$((ver_choice-1))]}"
+    else
+        VERSION="${VERSION_ARRAY[-1]}"
+    fi
+    echo "已选择版本: $VERSION"
+fi
+
+# ===========================
+# 用户输入可选参数
+# ===========================
+read -p "是否设置 root/administrator 密码? (y/n): " use_pass
+PASS=""
+if [[ "$use_pass" =~ ^[Yy]$ ]]; then
+    read -s -p "请输入密码: " PASS
+    echo
+fi
+
+read -p "是否修改 SSH 端口? (y/n): " use_ssh
+SSH_PORT=""
+if [[ "$use_ssh" =~ ^[Yy]$ ]]; then
+    read -p "请输入 SSH 端口: " SSH_PORT
+fi
+
+read -p "是否修改 Web 端口? (y/n): " use_web
+WEB_PORT=""
+if [[ "$use_web" =~ ^[Yy]$ ]]; then
+    read -p "请输入 Web 端口: " WEB_PORT
+fi
+
+# ===========================
+# 构建最终命令
+# ===========================
+CMD="bash reinstall.sh"
+
+# 系统与版本
+if [ -n "$VERSION" ]; then
+    CMD+=" ${OS_NAME,,} $VERSION"
+else
+    CMD+=" ${OS_NAME,,}"
+fi
+
+# 可选参数
+[ -n "$PASS" ] && CMD+=" --password $PASS"
+[ -n "$SSH_PORT" ] && CMD+=" --ssh-port $SSH_PORT"
+[ -n "$WEB_PORT" ] && CMD+=" --web-port $WEB_PORT"
+
+# ===========================
+# 显示命令并提示执行
+# ===========================
+echo
+echo "生成的安装命令如下:"
+echo -e "\033[1;32m$CMD\033[0m"
+read -p "是否执行该命令? (y/n): " confirm
+if [[ "$confirm" =~ ^[Yy]$ ]]; then
+    eval "$CMD"
+else
+    echo "操作已取消"
+fi
