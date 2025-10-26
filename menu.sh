@@ -148,7 +148,7 @@ print_page() {
   local PAGES=$((TOTAL ? (TOTAL+PER_PAGE-1)/PER_PAGE : 1))
   ((pagev>PAGES)) && pagev=1
 
-  clear; draw_line; draw_title "Shells Manager (by Moreanp)"; draw_mid
+  clear; draw_line; draw_title "Script Manager (by Moreanp)"; draw_mid
   local start=$(( (pagev-1)*PER_PAGE )); local end=$(( start+PER_PAGE-1 )); (( end>=TOTAL )) && end=$(( TOTAL-1 ))
 
   if (( TOTAL == 0 )); then
@@ -163,8 +163,8 @@ print_page() {
   fi
   draw_mid
   draw_text "Path: ${path#ROOT}"
-  draw_text "[ n ] Next Page   [ b ] Back Page"
-  draw_text "[ q ] Back/Quit   [0-9] Select"
+  draw_text "[ n ] Next   [ b ] Prev"
+  draw_text "[ q ] Back / Quit   [0-9] Select"
   draw_bot
   page=$pagev
 }
@@ -241,7 +241,7 @@ do_search() {
   local PAGES=$(( (TOTAL+PER_PAGE-1)/PER_PAGE ))
   page=1
 
-  clear; draw_line; draw_title "Shells Manager (Search: $keyword)"; draw_mid
+  clear; draw_line; draw_title "Script Manager (Search: $keyword)"; draw_mid
   local start=$(( (page-1)*PER_PAGE )); local end=$((start+PER_PAGE-1)); ((end>=TOTAL)) && end=$((TOTAL-1))
   for i in $(seq $start $end); do
     local entry="${DISPLAY_LINES[i]}"
@@ -265,19 +265,19 @@ while true; do
     b|B) ((page>1)) && ((page--)) || { echo "Already first page"; read -rp $'Press Enter to return...' _; } ;;
     q|Q)
       if [[ "$SEARCH_MODE" -eq 1 ]]; then
-        SEARCH_MODE=0
-        CURRENT_PATH="ROOT"
-        MENU_STACK=()
-        page=1
+          SEARCH_MODE=0
+          CURRENT_PATH="ROOT"
+          MENU_STACK=()
+          page=1
+      elif [[ "$CURRENT_PATH" != "ROOT" ]]; then
+          pop_menu_stack
       else
-        read -rp "Confirm exit Shells Manager? [Y/n] " exit_confirm
-        exit_confirm=${exit_confirm:-Y}
-        if [[ "$exit_confirm" =~ ^[Yy]$ ]]; then
-            echo "Exiting Shells Manager..."
-            exit 0
-        else
-            continue
-        fi
+          read -rp "Confirm exit Script Manager? [Y/n] " exit_confirm
+          exit_confirm=${exit_confirm:-Y}
+          if [[ "$exit_confirm" =~ ^[Yy]$ ]]; then
+              echo "Exiting Script Manager..."
+              exit 0
+          fi
       fi
       DISPLAY_LINES=()
       ;;
