@@ -148,7 +148,7 @@ print_page() {
   local PAGES=$((TOTAL ? (TOTAL+PER_PAGE-1)/PER_PAGE : 1))
   ((pagev>PAGES)) && pagev=1
 
-  clear; draw_line; draw_title "脚本管理器 (by Moreanp)"; draw_mid
+  clear; draw_line; draw_title "Shells Manager (by Moreanp)"; draw_mid
   local start=$(( (pagev-1)*PER_PAGE ))
   local end=$(( start+PER_PAGE-1 ))
   (( end >= TOTAL )) && end=$(( TOTAL - 1 ))
@@ -159,7 +159,7 @@ print_page() {
     for i in $(seq $start $end); do
       entry="${DISPLAY_LINES[i]}"
       local shown=$(( ( (i-start+1) % 10 ) ))
-      [[ "$entry" == DIR:* ]] && draw_text "${C_KEY}[$shown]${C_RESET} ${C_RUN}${entry#DIR:}${C_RESET}" \
+      [[ "$entry" == DIR:* ]] && draw_text "${C_KEY}[$shown]${C_RESET} ${C_RUN}▷${entry#DIR:}${C_RESET}" \
         || draw_text "${C_KEY}[$shown]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
     done
   fi
@@ -194,10 +194,16 @@ run_slot() {
   clear; echo -e "${C_KEY}→ 正在执行：${C_EXEC}${name}${C_RESET}"
   echo -e "${C_DIV}-----------------------------------------${C_RESET}"
 
-  # 执行前确认
-  read -rp "确定执行 [$name]? [y/N] " confirm
-  [[ "$confirm" =~ ^[Yy]$ ]] || return
+  # 执行前确认，默认 Y
+  read -rp "确定执行 [$name]? [Y/n] " confirm
+  confirm=${confirm:-Y}
+  if [[ "$confirm" =~ ^[Nn]$ ]]; then
+      echo "已取消执行 [$name]"
+      read -rp $'按回车返回菜单...' _
+      return
+  fi
 
+  # 执行命令
   if [[ "$cmd" =~ ^CMD: ]]; then
     eval "${cmd#CMD:} ${args}"
   elif [[ "$cmd" =~ ^https?:// ]]; then
@@ -237,40 +243,17 @@ do_search() {
   local PAGES=$(( (TOTAL+PER_PAGE-1)/PER_PAGE ))
   page=1
 
-  while true; do
-    clear; draw_line; draw_title "脚本管理器 (搜索：$keyword)"; draw_mid
-    local start=$(( (page-1)*PER_PAGE ))
-    local end=$(( start+PER_PAGE-1 ))
-    (( end >= TOTAL )) && end=$(( TOTAL - 1 ))
-
-    for i in $(seq $start $end); do
-      local entry="${DISPLAY_LINES[i]}"
-      local shown=$(( ( (i-start+1) % 10 ) ))
-      draw_text "${C_KEY}[$shown]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
-    done
-
-    draw_mid
-    draw_text "搜索结果 ${page}/${PAGES} 共 ${#DISPLAY_LINES[@]} 项"
-    draw_text "[ q ] 首页   [ 0-9 ] 选择"
-    draw_bot
-
-    read -e -p "$(printf "%b选项: %b" "$C_HINT" "$C_RESET")" key || true
-    [[ -z "$key" ]] && continue
-    case "$key" in
-      [0-9]) run_slot "$page" "$key" ;;
-      n|N) ((page<PAGES)) && ((page++)) || { echo "已是最后一页"; read -rp $'按回车返回...' _; } ;;
-      b|B) ((page>1)) && ((page--)) || { echo "已是第一页"; read -rp $'按回车返回...' _; } ;;
-      q|Q)
-        SEARCH_MODE=0
-        CURRENT_PATH="ROOT"
-        MENU_STACK=()
-        DISPLAY_LINES=()
-        page=1
-        break
-        ;;
-      *) do_search "$key" ;;
-    esac
+  clear; draw_line; draw_title "Shells Manager (scan：$keyword)"; draw_mid
+  local start=$(( (page-1)*PER_PAGE )); local end=$((start+PER_PAGE-1)); ((end>=TOTAL)) && end=$((TOTAL-1))
+  for i in $(seq $start $end); do
+    local entry="${DISPLAY_LINES[i]}"
+    local shown=$(( ( (i-start+1) % 10 ) ))
+    draw_text "${C_KEY}[$shown]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
   done
+  draw_mid
+  draw_text "搜索结果 ${page}/${PAGES} 共 ${#DISPLAY_LINES[@]} 项"
+  draw_text "[ q ] 首页   [ 0-9 ] 选择"
+  draw_bot
 }
 
 # ====== 主循环 ======
@@ -282,7 +265,17 @@ while true; do
     [0-9]) run_slot "$page" "$key" ;;
     n|N) ((page<PAGES)) && ((page++)) || { echo "已是最后一页"; read -rp $'按回车返回...' _; } ;;
     b|B) ((page>1)) && ((page--)) || { echo "已是第一页"; read -rp $'按回车返回...' _; } ;;
-    q|Q) pop_menu_stack ;;
+    q|Q)
+      if [[ "$SEARCH_MODE" -eq 1 ]]; then
+        SEARCH_MODE=0
+        CURRENT_PATH="ROOT"
+        MENU_STACK=()
+        page=1
+      else
+        pop_menu_stack
+      fi
+      DISPLAY_LINES=()
+      ;;
     *) do_search "$key" ;;
   esac
 done
