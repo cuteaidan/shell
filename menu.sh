@@ -48,16 +48,24 @@ fi
 
 # ====== 色彩定义 ======
 C_RESET="\033[0m"
-C_BOX="\033[1;38;5;222m"
-# 外边框 亮橙
+# 颜色终止符
+C_BOX="\033[1;38;5;51m"
+# 外边框 亮浅蓝
 C_TITLE="\033[1;38;5;220m"
+# 标题 金黄
 C_KEY="\033[1;32m"
+# 关键字、成功提示 亮绿色
 C_HINT="\033[1;32m"
+# 输入提示信息 亮绿色
 C_DIV="\033[38;5;240m"
+# 分隔线 灰色低饱和度
 C_EXEC="\033[1;32m"
+# 执行动作提示色 亮绿色
 C_RUN="\033[38;5;201m"
 #文件夹 洋红
 C_WARN="\033[1;33m"
+# 警告/注意颜色亮黄色
+
 
 # ====== 宽度计算 ======
 str_width() {
@@ -155,7 +163,7 @@ print_page() {
   for i in $(seq $start $end); do
     entry="${DISPLAY_LINES[i]}"
     local shown=$(( ( (i-start+1) % 10 ) ))
-    [[ "$entry" == DIR:* ]] && draw_text "${C_KEY}[$shown]${C_RESET} ${C_RUN}${entry#DIR:}${C_RESET}" \
+    [[ "$entry" == DIR:* ]] && draw_text "${C_KEY}[$shown]${C_RESET} ${C_RUN}>${entry#DIR:}${C_RESET}" \
       || draw_text "${C_KEY}[$shown]${C_RESET} ${C_EXEC}${entry%%|*}${C_RESET}"
   done
   draw_mid
