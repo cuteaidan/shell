@@ -3,15 +3,23 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-# ====== 自动提权 ======
+# ====== 自动提权（已改：询问是否提权，选择 Y 则使用 sudo 提权并重新执行脚本） ======
 if [ "$(id -u)" -ne 0 ]; then
   echo -e "\033[1;33m! Current user is not root.\033[0m"
   if ! command -v sudo >/dev/null 2>&1; then
     echo -e "\033[1;31mX sudo not installed. Please run as root.\033[0m"
     exit 1
   fi
-  echo -e "\033[1;32m🔑 Please enter password to gain admin privileges...\033[0m"
-  exec sudo -E bash "$0" "$@"
+
+  read -rp $'Would you like to elevate to root (sudo)? [Y/n] ' elevate_choice
+  elevate_choice=${elevate_choice:-Y}
+  if [[ "$elevate_choice" =~ ^[Yy]$ ]]; then
+    echo -e "\033[1;32m🔑 Elevating with sudo — you may be prompted for your password...\033[0m"
+    # 使用 exec 以 root 身份重新执行当前脚本并传递所有参数、环境（-E）
+    exec sudo -E bash "$0" "$@"
+  else
+    echo -e "\033[1;33m! Continuing without root privileges.\033[0m"
+  fi
 fi
 
 # ====== 配置部分 ======
@@ -180,7 +188,7 @@ print_page() {
   page=$pagev
 }
 
-# ====== 执行槽 ======
+# ====== 执行槽（已移除确认提示） ======
 run_slot() {
   local page="$1" key_input="$2"
   local offset=$(( key_input == 0 ? 9 : key_input - 1 ))
@@ -203,20 +211,17 @@ run_slot() {
   clear; echo -e "${C_KEY}→ Running: ${C_EXEC}${name}${C_RESET}"
   echo -e "${C_DIV}-----------------------------------------${C_RESET}"
 
-  read -rp "Confirm execution [$name]? [Y/n] " confirm
-  confirm=${confirm:-Y}
-  if [[ "$confirm" =~ ^[Nn]$ ]]; then
-      echo "Execution cancelled [$name]"
-      read -rp $'Press Enter to return...' _
-      return
-  fi
-
+  # 直接执行，无需确认
   if [[ "$cmd" =~ ^CMD: ]]; then
     eval "${cmd#CMD:} ${args}"
   elif [[ "$cmd" =~ ^https?:// ]]; then
-    if command -v curl >/dev/null 2>&1; then bash <(curl -fsSL "$cmd") ${args:+$args}
-    elif command -v wget >/dev/null 2>&1; then bash <(wget -qO- "$cmd") ${args:+$args}
-    else echo "X curl or wget not installed"; fi
+    if command -v curl >/dev/null 2>&1; then
+      bash <(curl -fsSL "$cmd") ${args:+$args}
+    elif command -v wget >/dev/null 2>&1; then
+      bash <(wget -qO- "$cmd") ${args:+$args}
+    else
+      echo "X curl or wget not installed"
+    fi
   else
     eval "$cmd ${args}"
   fi
