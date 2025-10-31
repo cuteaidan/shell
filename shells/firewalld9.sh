@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# firewalld 管理器 v8 - by Moreanp + ChatGPT
-# 支持分页、程序名+PID+路径、统一菜单、退格修复
+# firewalld 管理器 v9 - 支持管道运行
 # 日期: 2025-10-31
 
 set -o errexit
@@ -53,9 +52,7 @@ scan_listeners() {
     key="${proto}:${port}"
     LISTEN["$key"]=1
     short_path="$exe"
-    if [ ${#exe} -gt 28 ]; then
-      short_path=".../${exe##*/}"
-    fi
+    [ ${#exe} -gt 28 ] && short_path=".../${exe##*/}"
     INFO["$key"]="${comm:-?}(${pid:-?}) $short_path"
   done < <(
     $cmd 2>/dev/null | awk '
@@ -78,7 +75,6 @@ get_ports() {
   if [ "$FW" = "firewalld" ]; then
     ports=$(firewall-cmd --list-ports 2>/dev/null || true)
     services=$(firewall-cmd --list-services 2>/dev/null || true)
-    # 服务转换为端口
     for svc in $services; do
       info=$(firewall-cmd --info-service "$svc" 2>/dev/null || true)
       line=$(echo "$info" | grep -E '^ports:' | cut -d' ' -f2-)
@@ -87,7 +83,6 @@ get_ports() {
         entries+=("in|$proto|$p")
       done
     done
-    # 直接列出的端口
     for token in $ports; do
       p=${token%%/*}; proto=${token##*/}
       entries+=("in|$proto|$p")
@@ -104,8 +99,7 @@ check_status() {
     IFS='-' read -r s e <<<"$port"
     for ((p=s; p<=e; p++)); do
       if [ "${LISTEN["$proto:$p"]+1}" ]; then
-        echo "✔|${INFO["$proto:$p"]}"
-        return
+        echo "✔|${INFO["$proto:$p"]}"; return
       fi
     done
     echo "✖|-"
@@ -137,10 +131,10 @@ show_menu() {
       echo -e "firewalld 状态: ${RED}stopped${RESET}"
     fi
 
-    # 显示放行服务
+    # 已放行服务
     if [ "$FW" = "firewalld" ]; then
       svcs=$(firewall-cmd --list-services 2>/dev/null || echo "")
-      if [ -z "$svcs" ]; then svcs="-"; fi
+      [ -z "$svcs" ] && svcs="-"
       echo -e "${YELLOW}已放行服务:${RESET} $svcs"
     else
       echo -e "${YELLOW}已放行服务:${RESET} -"
@@ -157,7 +151,7 @@ show_menu() {
       IFS='|' read -r dir proto port <<<"${entries[$i]}"
       res=$(check_status "$proto" "$port")
       st=${res%%|*}; info=${res#*|}
-      if [ "$st" = "✔" ]; then st="${GREEN}✔${RESET}"; else st="${DIM}✖${RESET}"; fi
+      [ "$st" = "✔" ] && st="${GREEN}✔${RESET}" || st="${DIM}✖${RESET}"
       printf "%-6s %-6s %-15s %-8b %-35.35s\n" "$dir" "$proto" "$port" "$st" "$info"
     done
 
@@ -172,7 +166,7 @@ show_menu() {
     echo "6) 卸载防火墙"
     echo "0) 退出"
 
-    read -e -p "请选择操作: " CH </dev/tty
+    read -p "请选择操作: " CH
     CH=$(echo "$CH" | tr '[:upper:]' '[:lower:]')
     case "$CH" in
       n) [ $page -lt $pages ] && page=$((page+1)) ;;
@@ -191,7 +185,7 @@ show_menu() {
 
 # ====== 功能实现 ======
 toggle_temp() {
-  read -e -p "输入操作(open/o, close/c): " A </dev/tty
+  read -p "输入操作(open/o, close/c): " A
   A=$(echo "$A" | tr '[:upper:]' '[:lower:]')
   case "$A" in
     open|o) systemctl start firewalld && echo -e "${GREEN}已启动${RESET}" ;;
@@ -200,7 +194,7 @@ toggle_temp() {
 }
 
 toggle_perm() {
-  read -e -p "输入操作(enable/e, disable/d): " A </dev/tty
+  read -p "输入操作(enable/e, disable/d): " A
   A=$(echo "$A" | tr '[:upper:]' '[:lower:]')
   case "$A" in
     enable|e) systemctl enable --now firewalld && echo -e "${GREEN}已永久启用${RESET}" ;;
@@ -209,14 +203,14 @@ toggle_perm() {
 }
 
 open_port() {
-  read -e -p "端口号: " P </dev/tty
-  read -e -p "协议(tcp/udp): " PRO </dev/tty
+  read -p "端口号: " P
+  read -p "协议(tcp/udp): " PRO
   firewall-cmd --permanent --add-port="$P/$PRO" && firewall-cmd --reload
 }
 
 close_port() {
-  read -e -p "端口号: " P </dev/tty
-  read -e -p "协议(tcp/udp): " PRO </dev/tty
+  read -p "端口号: " P
+  read -p "协议(tcp/udp): " PRO
   firewall-cmd --permanent --remove-port="$P/$PRO" && firewall-cmd --reload
 }
 
