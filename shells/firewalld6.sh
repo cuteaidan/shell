@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# firewalld5.sh
-# firewalld 管理脚本 v5
+# firewalld6.sh
+# firewalld 管理脚本 v6
 # - 分页显示开放端口（每页10条，n 下一页，b 上一页，q 返回）
-# - 显示方向/协议/端口/监听状态/程序名（支持 TCP + UDP，范围端口检测：若范围内任一端口在监听则视为监听）
-# - 兼容性/安全性：保留 SSH，兼容无颜色终端与 firewalld 停止时不退出
+# - 若没有永久开放端口，则解析已启用服务并提取服务对应端口
+# - 显示方向/协议/端口/监听状态/程序名（支持 TCP + UDP，支持端口范围）
+# - 兼容性、容错、远程安全（保留 SSH）
 
 set -o errexit
 set -o pipefail
@@ -25,7 +26,12 @@ fi
 # ---------------- Config ----------------
 PAGE_SIZE=10
 
-# ---------------- Utility ----------------
+# ---------------- Globals ----------------
+declare -A LISTENING   # key = "tcp:80" value = 1
+declare -A PROC        # key = "tcp:80" value = "nginx"
+entries=()             # array of "in|proto|portstr"
+
+# ---------------- Utilities ----------------
 detect_os() {
     if [ -f /etc/os-release ]; then
         . /etc/os-release
@@ -47,91 +53,75 @@ detect_firewall() {
     fi
 }
 
-# safe run block to avoid errexit for optional commands
-safe_run() {
+# safe run helper (prevent errexit)
+safe_run_out() {
     set +e
-    "$@"
-    local rc=$?
+    out="$("$@" 2>/dev/null || true)"
+    rc=$?
     set -e
+    echo "$out"
     return $rc
 }
 
 # ---------------- Gather listeners (TCP + UDP) ----------------
-# Build associative arrays:
-# LISTENING["tcp:80"]="1"
-# PROC["tcp:80"]="nginx"
-declare -A LISTENING
-declare -A PROC
-
 gather_listeners() {
-    # clear arrays
     LISTENING=()
     PROC=()
 
-    # TCP listeners
     set +e
     tcp_lines=$(ss -ltnp 2>/dev/null || true)
     udp_lines=$(ss -lunp 2>/dev/null || true)
     set -e
 
-    # Parse TCP: find lines containing "0.0.0.0:80" or "[::]:80"
-    # Example: LISTEN   0      128         0.0.0.0:80        0.0.0.0:*    users:(("nginx",pid=123,fd=6))
+    # parse lines for addr:port and users:(...)
     if [ -n "$tcp_lines" ]; then
         while IFS= read -r line; do
-            # extract address:port (the 4th or 5th column may vary) -- use awk to find fields containing ':' (address:port)
-            addrport=$(echo "$line" | awk '{ for(i=1;i<=NF;i++) if ($i ~ /:[0-9]+$/) { print $i; exit } }')
+            # find token like 0.0.0.0:80 or [::]:80 or *:80
+            addrport=$(echo "$line" | awk '{for(i=1;i<=NF;i++) if ($i ~ /:[0-9]+$/) {print $i; exit}}')
             procfield=$(echo "$line" | grep -oP 'users:\(\K.*(?=\))' 2>/dev/null || true)
-            if [ -n "$addrport" ]; then
-                # extract port
-                port=$(echo "$addrport" | awk -F: '{print $NF}')
-                key="tcp:${port}"
-                LISTENING["$key"]="1"
-                if [ -n "$procfield" ]; then
-                    # procfield could be: ("nginx",pid=123,fd=6),("...")...
-                    # extract first program name
-                    pname=$(echo "$procfield" | sed -E 's/^"([^"]+)".*/\1/' 2>/dev/null || true)
-                    if [ -z "$pname" ]; then
-                        # fallback parse
-                        pname=$(echo "$procfield" | awk -F'[(",)]' '{for(i=1;i<=NF;i++) if ($i ~ /^[a-zA-Z0-9._-]+$/) {print $i; exit}}' 2>/dev/null || true)
-                    fi
-                    PROC["$key"]="$pname"
+            [ -z "$addrport" ] && continue
+            port=$(echo "$addrport" | awk -F: '{print $NF}')
+            key="tcp:${port}"
+            LISTENING["$key"]="1"
+            if [ -n "$procfield" ]; then
+                # try extract first quoted program name
+                pname=$(echo "$procfield" | sed -E 's/^"([^"]+)".*/\1/' 2>/dev/null || true)
+                if [ -z "$pname" ]; then
+                    pname=$(echo "$procfield" | awk -F'[(",)]' '{for(i=1;i<=NF;i++) if ($i ~ /^[a-zA-Z0-9._-]+$/) {print $i; exit}}' 2>/dev/null || true)
                 fi
+                [ -n "$pname" ] && PROC["$key"]="$pname"
             fi
         done <<< "$tcp_lines"
     fi
 
-    # Parse UDP
     if [ -n "$udp_lines" ]; then
         while IFS= read -r line; do
-            addrport=$(echo "$line" | awk '{ for(i=1;i<=NF;i++) if ($i ~ /:[0-9]+$/) { print $i; exit } }')
+            addrport=$(echo "$line" | awk '{for(i=1;i<=NF;i++) if ($i ~ /:[0-9]+$/) {print $i; exit}}')
             procfield=$(echo "$line" | grep -oP 'users:\(\K.*(?=\))' 2>/dev/null || true)
-            if [ -n "$addrport" ]; then
-                port=$(echo "$addrport" | awk -F: '{print $NF}')
-                key="udp:${port}"
-                LISTENING["$key"]="1"
-                if [ -n "$procfield" ]; then
-                    pname=$(echo "$procfield" | sed -E 's/^"([^"]+)".*/\1/' 2>/dev/null || true)
-                    if [ -z "$pname" ]; then
-                        pname=$(echo "$procfield" | awk -F'[(",)]' '{for(i=1;i<=NF;i++) if ($i ~ /^[a-zA-Z0-9._-]+$/) {print $i; exit}}' 2>/dev/null || true)
-                    fi
-                    PROC["$key"]="$pname"
+            [ -z "$addrport" ] && continue
+            port=$(echo "$addrport" | awk -F: '{print $NF}')
+            key="udp:${port}"
+            LISTENING["$key"]="1"
+            if [ -n "$procfield" ]; then
+                pname=$(echo "$procfield" | sed -E 's/^"([^"]+)".*/\1/' 2>/dev/null || true)
+                if [ -z "$pname" ]; then
+                    pname=$(echo "$procfield" | awk -F'[(",)]' '{for(i=1;i<=NF;i++) if ($i ~ /^[a-zA-Z0-9._-]+$/) {print $i; exit}}' 2>/dev/null || true)
                 fi
+                [ -n "$pname" ] && PROC["$key"]="$pname"
             fi
         done <<< "$udp_lines"
     fi
 }
 
-# Helper: check if any port in a range is listening, return proc name for first match (or -)
-# input: proto (tcp/udp) and port_str (e.g., 80 or 39000-40000)
+# check listen for proto and port string (supports range)
+# returns "1|program" if any port in portstr is listening, else "0|-"
 check_listen_and_proc() {
     local proto=$1
-    local port_str=$2
-    local key
-    if [[ "$port_str" == *-* ]]; then
-        IFS='-' read -r start end <<< "$port_str"
-        # safeguard numeric
+    local portstr=$2
+    if [[ "$portstr" == *-* ]]; then
+        IFS='-' read -r start end <<< "$portstr"
         if ! [[ "$start" =~ ^[0-9]+$ && "$end" =~ ^[0-9]+$ ]]; then
-            echo "0|-"  # not numeric range
+            echo "0|-"
             return
         fi
         for ((p=start; p<=end; p++)); do
@@ -143,7 +133,7 @@ check_listen_and_proc() {
         done
         echo "0|-"
     else
-        key="${proto}:${port_str}"
+        key="${proto}:${portstr}"
         if [ "${LISTENING[$key]:-}" = "1" ]; then
             echo "1|${PROC[$key]:--}"
         else
@@ -152,84 +142,89 @@ check_listen_and_proc() {
     fi
 }
 
-# ---------------- Show firewall status & paged ports ----------------
-show_fw_status_with_paging() {
-    echo -e "${CYAN}================ 防火墙状态 =================${RESET}"
-
-    if [ "$FW_TYPE" = "firewalld" ]; then
-        # tolerate failures here
-        set +e
-        firewalld_status=$(systemctl is-active firewalld 2>/dev/null || true)
-        ports_raw=$(firewall-cmd --list-ports 2>/dev/null || true)
-        services=$(firewall-cmd --list-services 2>/dev/null || true)
-        set -e
-
-        if [ "$firewalld_status" = "active" ]; then
-            STATUS="${GREEN}running${RESET}"
-        else
-            STATUS="${RED}stopped${RESET}"
-        fi
-        echo -e "firewalld 状态: $STATUS"
-        echo -e "${YELLOW}已启用服务: ${RESET}${services:--}"
-    elif [ "$FW_TYPE" = "ufw" ]; then
-        echo -e "${YELLOW}ufw 状态:${RESET}"
-        set +e
-        ufw status verbose || true
-        set -e
-        return
-    elif [ "$FW_TYPE" = "iptables" ]; then
-        echo -e "${YELLOW}iptables 规则:${RESET}"
-        set +e
-        iptables -L -n -v || true
-        set -e
-        return
-    else
-        echo -e "${RED}未检测到可用防火墙${RESET}"
-        return
-    fi
-
-    # Build array of port entries (direction/proto/port_str)
-    IFS=$'\n' read -r -d '' -a port_entries <<< "$(printf "%s\n" $ports_raw; printf "\0")"
-
-    # flatten: some systems may return nothing -> handle
+# ---------------- Build entries from ports or services ----------------
+build_entries_from_firewalld() {
     entries=()
-    for entry in "${port_entries[@]:-}"; do
-        # skip empty
-        [ -z "$entry" ] && continue
-        # entry format examples: "80/tcp" or "39000-40000/tcp"
-        proto="${entry##*/}"
-        portstr="${entry%%/*}"
-        entries+=("in|${proto}|${portstr}")
-    done
+    # try list-ports first
+    set +e
+    raw_ports=$(firewall-cmd --list-ports 2>/dev/null || true)
+    raw_services=$(firewall-cmd --list-services 2>/dev/null || true)
+    set -e
 
-    # if no entries, show message
+    # collect ports from --list-ports (format: "80/tcp 443/tcp 1000-2000/tcp")
+    if [ -n "$raw_ports" ]; then
+        for token in $raw_ports; do
+            proto="${token##*/}"
+            portstr="${token%%/*}"
+            entries+=("in|${proto}|${portstr}")
+        done
+    fi
+
+    # If no direct ports, parse services and get ports from each service
+    if [ ${#entries[@]} -eq 0 ] && [ -n "$raw_services" ]; then
+        for svc in $raw_services; do
+            # get info-service, find "ports:" line
+            set +e
+            info=$(firewall-cmd --info-service "$svc" 2>/dev/null || true)
+            set -e
+            # info may contain a line like: ports: 22/tcp 5353/udp
+            ports_line=$(echo "$info" | awk -F': ' '/ports: / {print $2; exit}' || true)
+            # some services might not list ports; skip if empty
+            if [ -n "$ports_line" ]; then
+                for token in $ports_line; do
+                    proto="${token##*/}"
+                    portstr="${token%%/*}"
+                    entries+=("in|${proto}|${portstr}")
+                done
+            fi
+        done
+    fi
+
+    # deduplicate entries while preserving order
+    declare -A seen
+    uniq_entries=()
+    for e in "${entries[@]}"; do
+        if [ -z "${seen[$e]:-}" ]; then
+            seen[$e]=1
+            uniq_entries+=("$e")
+        fi
+    done
+    entries=("${uniq_entries[@]}")
+}
+
+# ---------------- Show paged table ----------------
+show_ports_paged() {
+    # gather entries
+    build_entries_from_firewalld
+
     if [ ${#entries[@]} -eq 0 ]; then
-        echo "开放端口表格: （暂无开放端口）"
-        echo -e "${CYAN}===========================================${RESET}"
+        echo -e "${YELLOW}开放端口表格:（无永久开放端口，也无服务端口可解析）${RESET}"
         return
     fi
 
-    # gather listeners snapshot
+    # snapshot listeners
     gather_listeners
 
-    # Pagination variables
     total=${#entries[@]}
     pages=$(( (total + PAGE_SIZE - 1) / PAGE_SIZE ))
     page=1
 
-    # Pagination loop
     while true; do
         clear -x
         echo -e "${CYAN}================ 防火墙状态 =================${RESET}"
-        if [ "$firewalld_status" = "active" ]; then
-            STATUS="${GREEN}running${RESET}"
+        # show status & services
+        set +e
+        fwstat=$(systemctl is-active firewalld 2>/dev/null || true)
+        services=$(firewall-cmd --list-services 2>/dev/null || true)
+        set -e
+        if [ "$fwstat" = "active" ]; then
+            echo -e "firewalld 状态: ${GREEN}running${RESET}"
         else
-            STATUS="${RED}stopped${RESET}"
+            echo -e "firewalld 状态: ${RED}stopped${RESET}"
         fi
-        echo -e "firewalld 状态: $STATUS"
         echo -e "${YELLOW}已启用服务: ${RESET}${services:--}"
         echo
-        echo -e "${YELLOW}开放端口表格 (第 ${page}/${pages} 页)：${RESET}"
+
         printf "%-6s %-8s %-18s %-10s %-16s\n" "方向" "协议" "端口" "监听" "程序"
         echo "-------------------------------------------------------------------------------"
 
@@ -243,10 +238,10 @@ show_fw_status_with_paging() {
             line="${entries[$idx]}"
             IFS='|' read -r direction proto portstr <<< "$line"
 
-            # check listen & proc
             res=$(check_listen_and_proc "$proto" "$portstr")
             is_listen=${res%%|*}
             pname=${res#*|}
+
             if [ "$is_listen" = "1" ]; then
                 listen_display="${GREEN}✔${RESET}"
                 pname_display="${pname:--}"
@@ -259,30 +254,20 @@ show_fw_status_with_paging() {
         done
 
         echo "-------------------------------------------------------------------------------"
-        echo -e "${CYAN}操作: n 下一页 | b 上一页 | q 返回菜单${RESET}"
+        echo -e "${CYAN}第 ${page}/${pages} 页 — 操作: n 下一页 | b 上一页 | q 返回菜单${RESET}"
         read -r -p "输入: " nav </dev/tty
         nav=$(echo "$nav" | tr '[:upper:]' '[:lower:]' | xargs || true)
         case "$nav" in
             n)
-                if [ $page -lt $pages ]; then
-                    page=$((page+1))
-                else
-                    # already last
-                    :
-                fi
+                if [ $page -lt $pages ]; then page=$((page+1)); fi
                 ;;
             b)
-                if [ $page -gt 1 ]; then
-                    page=$((page-1))
-                else
-                    :
-                fi
+                if [ $page -gt 1 ]; then page=$((page-1)); fi
                 ;;
             q|"")
                 break
                 ;;
             *)
-                # treat numbers as jump to page optionally
                 if [[ "$nav" =~ ^[0-9]+$ ]]; then
                     if [ "$nav" -ge 1 ] && [ "$nav" -le $pages ]; then
                         page=$nav
@@ -291,15 +276,12 @@ show_fw_status_with_paging() {
                 ;;
         esac
     done
-
-    echo -e "${CYAN}===========================================${RESET}"
 }
 
-# ---------------- Other operations (temp/permanent/open/close/install/uninstall) ----------------
-
+# ---------------- Other operations ----------------
 toggle_fw_temp() {
     if [ "$FW_TYPE" != "firewalld" ]; then
-        echo -e "${RED}当前非 firewalld，暂不支持临时开关（脚本支持 ufw/iptables 的部分功能）${RESET}"
+        echo -e "${RED}当前非 firewalld，临时开关仅对 firewalld 有效${RESET}"
         return
     fi
     read -r -p "请输入操作(open/o, close/c): " ACTION </dev/tty
@@ -324,7 +306,7 @@ toggle_fw_temp() {
 
 toggle_fw_permanent() {
     if [ "$FW_TYPE" != "firewalld" ]; then
-        echo -e "${RED}当前非 firewalld，暂不支持永久开关（脚本支持 ufw/iptables 的部分功能）${RESET}"
+        echo -e "${RED}当前非 firewalld，永久开关仅对 firewalld 有效${RESET}"
         return
     fi
     read -r -p "请输入操作(enable/e, disable/d): " ACTION </dev/tty
@@ -428,7 +410,8 @@ main_menu() {
     while true; do
         clear
         detect_firewall
-        show_fw_status_with_paging
+        # show status + paged ports
+        show_ports_paged
         echo -e "${BLUE}================ 防火墙管理菜单 ================${RESET}"
         echo "1) 临时开/关防火墙"
         echo "2) 永久开/关防火墙"
