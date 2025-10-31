@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# universal_firewall_manager_safe_v2.sh
-# 安全、兼容、表格化显示防火墙状态，并修复状态颜色显示
+# universal_firewall_manager_safe_v3.sh
+# 安全、兼容、防止菜单自动退出，表格化显示防火墙状态
 
 set -o errexit
 set -o pipefail
@@ -95,10 +95,10 @@ show_fw_status() {
 # ====== 临时开关防火墙（保留 SSH 端口） ======
 toggle_fw_temp() {
     if [ "$FW_TYPE" = "firewalld" ]; then
-        read -rp "请输入操作(open/close): " ACTION
+        read -r -p "请输入操作(open/close): " ACTION </dev/tty
         if [ "$ACTION" = "close" ]; then
             echo -e "${YELLOW}注意：关闭防火墙可能会断开远程 SSH${RESET}"
-            read -rp "确认关闭防火墙？(yes/no): " CONF
+            read -r -p "确认关闭防火墙？(yes/no): " CONF </dev/tty
             if [ "$CONF" = "yes" ]; then
                 systemctl stop firewalld
                 echo -e "${RED}firewalld 已临时停止${RESET}"
@@ -108,7 +108,7 @@ toggle_fw_temp() {
             echo -e "${GREEN}firewalld 已临时启动${RESET}"
         fi
     elif [ "$FW_TYPE" = "ufw" ]; then
-        read -rp "请输入操作(enable/disable): " ACTION
+        read -r -p "请输入操作(enable/disable): " ACTION </dev/tty
         ufw "$ACTION"
     elif [ "$FW_TYPE" = "iptables" ]; then
         echo -e "${YELLOW}iptables 临时操作可通过手动规则管理${RESET}"
@@ -120,10 +120,10 @@ toggle_fw_temp() {
 # ====== 永久开关防火墙（保留 SSH） ======
 toggle_fw_permanent() {
     if [ "$FW_TYPE" = "firewalld" ]; then
-        read -rp "请输入操作(enable/disable): " ACTION
+        read -r -p "请输入操作(enable/disable): " ACTION </dev/tty
         if [ "$ACTION" = "disable" ]; then
             echo -e "${YELLOW}注意：禁用防火墙可能断开 SSH${RESET}"
-            read -rp "确认禁用防火墙？(yes/no): " CONF
+            read -r -p "确认禁用防火墙？(yes/no): " CONF </dev/tty
             if [ "$CONF" = "yes" ]; then
                 systemctl disable --now firewalld
                 echo -e "${RED}firewalld 已永久禁用${RESET}"
@@ -133,7 +133,7 @@ toggle_fw_permanent() {
             echo -e "${GREEN}firewalld 已永久启用${RESET}"
         fi
     elif [ "$FW_TYPE" = "ufw" ]; then
-        read -rp "请输入操作(enable/disable): " ACTION
+        read -r -p "请输入操作(enable/disable): " ACTION </dev/tty
         ufw "$ACTION"
     else
         echo -e "${RED}永久开关暂不支持此防火墙${RESET}"
@@ -142,8 +142,8 @@ toggle_fw_permanent() {
 
 # ====== 开放端口（自动保留 SSH） ======
 open_port() {
-    read -rp "请输入端口号: " PORT
-    read -rp "请输入协议(tcp/udp): " PROTO
+    read -r -p "请输入端口号: " PORT </dev/tty
+    read -r -p "请输入协议(tcp/udp): " PROTO </dev/tty
     if [ "$PORT" -eq 22 ] 2>/dev/null; then
         echo -e "${YELLOW}SSH 端口默认开放，无需修改${RESET}"
         return
@@ -164,8 +164,8 @@ open_port() {
 
 # ====== 关闭端口 ======
 close_port() {
-    read -rp "请输入端口号: " PORT
-    read -rp "请输入协议(tcp/udp): " PROTO
+    read -r -p "请输入端口号: " PORT </dev/tty
+    read -r -p "请输入协议(tcp/udp): " PROTO </dev/tty
     if [ "$PORT" -eq 22 ] 2>/dev/null; then
         echo -e "${YELLOW}SSH 端口默认开放，不能关闭${RESET}"
         return
@@ -233,7 +233,7 @@ main_menu() {
         echo "5) 安装防火墙"
         echo "6) 卸载防火墙"
         echo "0) 退出"
-        read -rp "请选择操作: " CHOICE
+        read -r -p "请选择操作: " CHOICE </dev/tty
         case $CHOICE in
             1) toggle_fw_temp ;;
             2) toggle_fw_permanent ;;
@@ -245,7 +245,7 @@ main_menu() {
             *) echo -e "${RED}无效选择${RESET}" ;;
         esac
         echo -e "${CYAN}按回车返回菜单...${RESET}"
-        read -r
+        read -r </dev/tty
     done
 }
 
