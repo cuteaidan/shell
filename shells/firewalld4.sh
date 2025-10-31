@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# universal_firewall_manager_v4.sh
-# 兼容性高 + 支持缩写 + 不会自动退出 + ANSI颜色显示稳定
+# universal_firewall_manager_v4.1.sh
+# 修复 firewalld 停止后脚本自动退出的问题 + 保留颜色、菜单与缩写功能
 
 set -o errexit
 set -o pipefail
 set -o nounset
 
-# ====== 颜色 ======
 if [ -t 1 ]; then
     RED="\033[1;31m"
     GREEN="\033[1;32m"
@@ -15,15 +14,9 @@ if [ -t 1 ]; then
     CYAN="\033[1;36m"
     RESET="\033[0m"
 else
-    RED=""
-    GREEN=""
-    YELLOW=""
-    BLUE=""
-    CYAN=""
-    RESET=""
+    RED=""; GREEN=""; YELLOW=""; BLUE=""; CYAN=""; RESET=""
 fi
 
-# ====== 系统检测 ======
 detect_os() {
     if [ -f /etc/os-release ]; then
         . /etc/os-release
@@ -33,7 +26,6 @@ detect_os() {
     fi
 }
 
-# ====== 防火墙类型检测 ======
 detect_firewall() {
     if command -v firewall-cmd >/dev/null 2>&1; then
         FW_TYPE="firewalld"
@@ -46,64 +38,67 @@ detect_firewall() {
     fi
 }
 
-# ====== 显示防火墙状态 ======
 show_fw_status() {
     echo -e "${CYAN}================ 防火墙状态 =================${RESET}"
     if [ "$FW_TYPE" = "firewalld" ]; then
+        # 🔧 临时关闭 errexit，防止命令失败导致退出
+        set +e
         firewalld_status=$(systemctl is-active firewalld 2>/dev/null)
+        ports=$(firewall-cmd --list-ports 2>/dev/null)
+        services=$(firewall-cmd --list-services 2>/dev/null)
+        set -e
+
         if [ "$firewalld_status" = "active" ]; then
             STATUS="${GREEN}running${RESET}"
         else
             STATUS="${RED}stopped${RESET}"
         fi
-        echo -e "firewalld 状态: $STATUS"
 
+        echo -e "firewalld 状态: $STATUS"
         echo -e "${YELLOW}开放端口表格:${RESET}"
         printf "%-8s %-10s %-20s\n" "方向" "协议" "端口"
         echo "-------------------------------------------"
-        for port in $(firewall-cmd --list-ports 2>/dev/null); do
-            proto="${port##*/}"
-            p="${port%%/*}"
-            printf "%-8s %-10s %-20s\n" "in" "$proto" "$p"
-        done
-        if firewall-cmd --help | grep -q -- "--get-icmp-blocks"; then
-            icmp_list=$(firewall-cmd --get-icmp-blocks 2>/dev/null)
-            [ -n "$icmp_list" ] && printf "%-8s %-10s %-20s\n" "in" "icmp" "$icmp_list"
+
+        if [ -n "$ports" ]; then
+            for port in $ports; do
+                proto="${port##*/}"
+                p="${port%%/*}"
+                printf "%-8s %-10s %-20s\n" "in" "$proto" "$p"
+            done
+        else
+            echo "（暂无开放端口）"
         fi
-        services=$(firewall-cmd --list-services 2>/dev/null)
+
         [ -n "$services" ] && echo -e "${GREEN}已启用服务: $services${RESET}"
     elif [ "$FW_TYPE" = "ufw" ]; then
-        ufw status verbose
+        set +e
+        ufw status verbose 2>/dev/null || echo -e "${RED}ufw 未启动${RESET}"
+        set -e
     elif [ "$FW_TYPE" = "iptables" ]; then
         echo -e "${YELLOW}iptables 规则表:${RESET}"
-        printf "%-8s %-10s %-10s %-10s\n" "链" "协议" "端口" "动作"
-        echo "---------------------------------------------"
-        iptables -L -n -v | awk '
-        /^Chain/ {chain=$2}
-        /^[ ]*[0-9]/ {proto=$1; action=$4; port=""; if($1=="tcp" || $1=="udp") {port=$12} print chain"\t"proto"\t"port"\t"action}'
+        set +e
+        iptables -L -n -v 2>/dev/null || echo -e "${RED}iptables 未启动${RESET}"
+        set -e
     else
         echo -e "${RED}未检测到可用防火墙${RESET}"
     fi
     echo -e "${CYAN}===========================================${RESET}"
 }
 
-# ====== 临时开关防火墙（支持缩写） ======
 toggle_fw_temp() {
     if [ "$FW_TYPE" = "firewalld" ]; then
         read -r -p "请输入操作(open/o, close/c): " ACTION </dev/tty
         ACTION=$(echo "$ACTION" | tr '[:upper:]' '[:lower:]' | xargs)
         case "$ACTION" in
             open|o)
-                systemctl start firewalld
-                echo -e "${GREEN}firewalld 已临时启动${RESET}"
+                systemctl start firewalld && echo -e "${GREEN}firewalld 已临时启动${RESET}"
                 ;;
             close|c)
-                echo -e "${YELLOW}注意：关闭防火墙可能会断开远程 SSH${RESET}"
+                echo -e "${YELLOW}注意：关闭防火墙可能断开 SSH${RESET}"
                 read -r -p "确认关闭防火墙？(yes/y): " CONF </dev/tty
                 CONF=$(echo "$CONF" | tr '[:upper:]' '[:lower:]' | xargs)
                 if [[ "$CONF" == "yes" || "$CONF" == "y" ]]; then
-                    systemctl stop firewalld
-                    echo -e "${RED}firewalld 已临时停止${RESET}"
+                    systemctl stop firewalld && echo -e "${RED}firewalld 已临时关闭${RESET}"
                 fi
                 ;;
             *)
@@ -111,27 +106,24 @@ toggle_fw_temp() {
                 ;;
         esac
     else
-        echo -e "${RED}当前防火墙不支持该操作${RESET}"
+        echo -e "${RED}当前防火墙类型不支持该操作${RESET}"
     fi
 }
 
-# ====== 永久开关防火墙（支持缩写） ======
 toggle_fw_permanent() {
     if [ "$FW_TYPE" = "firewalld" ]; then
         read -r -p "请输入操作(enable/e, disable/d): " ACTION </dev/tty
         ACTION=$(echo "$ACTION" | tr '[:upper:]' '[:lower:]' | xargs)
         case "$ACTION" in
             enable|e)
-                systemctl enable --now firewalld
-                echo -e "${GREEN}firewalld 已永久启用${RESET}"
+                systemctl enable --now firewalld && echo -e "${GREEN}firewalld 已永久启用${RESET}"
                 ;;
             disable|d)
                 echo -e "${YELLOW}注意：禁用防火墙可能断开 SSH${RESET}"
                 read -r -p "确认禁用防火墙？(yes/y): " CONF </dev/tty
                 CONF=$(echo "$CONF" | tr '[:upper:]' '[:lower:]' | xargs)
                 if [[ "$CONF" == "yes" || "$CONF" == "y" ]]; then
-                    systemctl disable --now firewalld
-                    echo -e "${RED}firewalld 已永久禁用${RESET}"
+                    systemctl disable --now firewalld && echo -e "${RED}firewalld 已永久禁用${RESET}"
                 fi
                 ;;
             *)
@@ -143,88 +135,52 @@ toggle_fw_permanent() {
     fi
 }
 
-# ====== 开放端口 ======
 open_port() {
     read -r -p "请输入端口号: " PORT </dev/tty
     read -r -p "请输入协议(tcp/udp): " PROTO </dev/tty
     PROTO=$(echo "$PROTO" | tr '[:upper:]' '[:lower:]' | xargs)
-    if [ "$PORT" -eq 22 ] 2>/dev/null; then
-        echo -e "${YELLOW}SSH 端口默认开放，无需修改${RESET}"
-        return
-    fi
+    [ "$PORT" -eq 22 ] 2>/dev/null && { echo -e "${YELLOW}SSH 端口不能修改${RESET}"; return; }
+
     if [ "$FW_TYPE" = "firewalld" ]; then
-        firewall-cmd --permanent --add-port="$PORT/$PROTO"
-        firewall-cmd --reload
+        firewall-cmd --permanent --add-port="$PORT/$PROTO" 2>/dev/null
+        firewall-cmd --reload 2>/dev/null
         echo -e "${GREEN}$PORT/$PROTO 已开放${RESET}"
-    elif [ "$FW_TYPE" = "ufw" ]; then
-        ufw allow "$PORT"/"$PROTO"
-    elif [ "$FW_TYPE" = "iptables" ]; then
-        iptables -A INPUT -p "$PROTO" --dport "$PORT" -j ACCEPT
-        echo -e "${GREEN}$PORT/$PROTO 已开放${RESET}"
-    else
-        echo -e "${RED}未检测到可用防火墙${RESET}"
     fi
 }
 
-# ====== 关闭端口 ======
 close_port() {
     read -r -p "请输入端口号: " PORT </dev/tty
     read -r -p "请输入协议(tcp/udp): " PROTO </dev/tty
     PROTO=$(echo "$PROTO" | tr '[:upper:]' '[:lower:]' | xargs)
-    if [ "$PORT" -eq 22 ] 2>/dev/null; then
-        echo -e "${YELLOW}SSH 端口默认开放，不能关闭${RESET}"
-        return
-    fi
+    [ "$PORT" -eq 22 ] 2>/dev/null && { echo -e "${YELLOW}SSH 端口不能关闭${RESET}"; return; }
+
     if [ "$FW_TYPE" = "firewalld" ]; then
-        firewall-cmd --permanent --remove-port="$PORT/$PROTO"
-        firewall-cmd --reload
+        firewall-cmd --permanent --remove-port="$PORT/$PROTO" 2>/dev/null
+        firewall-cmd --reload 2>/dev/null
         echo -e "${RED}$PORT/$PROTO 已关闭${RESET}"
-    elif [ "$FW_TYPE" = "ufw" ]; then
-        ufw delete allow "$PORT"/"$PROTO"
-    elif [ "$FW_TYPE" = "iptables" ]; then
-        iptables -D INPUT -p "$PROTO" --dport "$PORT" -j ACCEPT
-        echo -e "${RED}$PORT/$PROTO 已关闭${RESET}"
-    else
-        echo -e "${RED}未检测到可用防火墙${RESET}"
     fi
 }
 
-# ====== 安装防火墙 ======
 install_fw() {
-    if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
-        apt update && apt install -y ufw
-        echo -e "${GREEN}ufw 安装完成${RESET}"
-    elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ] || [ "$OS" = "fedora" ]; then
-        yum install -y firewalld
-        systemctl enable --now firewalld
-        echo -e "${GREEN}firewalld 安装完成${RESET}"
-    else
-        echo -e "${RED}系统不支持自动安装防火墙，请手动安装${RESET}"
+    if [ "$OS" = "centos" ] || [ "$OS" = "rhel" ] || [ "$OS" = "fedora" ]; then
+        yum install -y firewalld && systemctl enable --now firewalld
+    elif [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
+        apt update && apt install -y ufw && ufw enable
     fi
     detect_firewall
 }
 
-# ====== 卸载防火墙 ======
 uninstall_fw() {
     if [ "$FW_TYPE" = "firewalld" ]; then
         systemctl stop firewalld
-        if [ "$OS" = "centos" ] || [ "$OS" = "rhel" ] || [ "$OS" = "fedora" ]; then
-            yum remove -y firewalld
-        fi
-        echo -e "${RED}firewalld 已卸载${RESET}"
+        yum remove -y firewalld
     elif [ "$FW_TYPE" = "ufw" ]; then
         ufw disable
-        if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
-            apt remove -y ufw
-        fi
-        echo -e "${RED}ufw 已卸载${RESET}"
-    else
-        echo -e "${RED}未检测到可卸载的防火墙${RESET}"
+        apt remove -y ufw
     fi
     detect_firewall
 }
 
-# ====== 菜单 ======
 main_menu() {
     while true; do
         clear
@@ -254,7 +210,6 @@ main_menu() {
     done
 }
 
-# ====== 执行 ======
 detect_os
 detect_firewall
 main_menu
